@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 
 # 1. Configuração de Página e Estilo Dark Premium
-st.set_page_config(page_title="CFO Strategic Intelligence", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="CFO Strategic Intelligence", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
     <style>
@@ -50,7 +50,8 @@ def load_and_process():
     def clean_val(v):
         if isinstance(v, str):
             v = v.replace('R$', '').replace('.', '').replace(' ', '').replace(',', '.')
-            return float(v)
+            try: return float(v)
+            except: return 0.0
         return v
 
     col_v = 'Valor categoria/centro de custo'
@@ -58,7 +59,7 @@ def load_and_process():
     df['Data de pagamento'] = pd.to_datetime(df['Data de pagamento'], dayfirst=True, errors='coerce')
     df = df.dropna(subset=['Data de pagamento']).sort_values('Data de pagamento')
 
-    # Criar colunas de período para o filtro e projeção
+    # Criar colunas de período
     df['Mes_Ano'] = df['Data de pagamento'].dt.strftime('%m/%Y')
     df['Periodo_Sort'] = df['Data de pagamento'].dt.to_period('M')
 
@@ -73,28 +74,29 @@ try:
     df_raw = load_and_process()
     col_v = 'Valor categoria/centro de custo'
 
-    # --- SIDEBAR: FILTROS ---
-    st.sidebar.title("🛠️ Filtros Estratégicos")
-    
-    # Filtro de Mês Dinâmico
+    # Header Superior
+    c1, c2 = st.columns([4, 1])
+    with c1:
+        st.title("💎 CFO Intelligence: Strategic View")
+    with c2:
+        if st.button("🔄 Sincronizar Dados"):
+            st.cache_data.clear()
+            st.rerun()
+
+    # Filtro de Mês no Corpo da Página (Melhor UX)
     lista_meses = sorted(df_raw['Mes_Ano'].unique(), key=lambda x: pd.to_datetime(x, format='%m/%Y'))
     lista_meses.insert(0, "Todos os Meses")
-    mes_selecionado = st.sidebar.selectbox("Selecione o Período:", lista_meses)
+    
+    f1, f2 = st.columns([1, 3])
+    with f1:
+        mes_selecionado = st.selectbox("📅 Filtrar Período:", lista_meses)
 
     if mes_selecionado != "Todos os Meses":
         df = df_raw[df_raw['Mes_Ano'] == mes_selecionado].copy()
     else:
         df = df_raw.copy()
 
-    # Header Superior
-    c1, c2 = st.columns([4, 1])
-    with c1:
-        st.title("💎 CFO Intelligence: Strategic View")
-        st.caption(f"Visualizando: **{mes_selecionado}**")
-    with c2:
-        if st.button("🔄 Sincronizar"):
-            st.cache_data.clear()
-            st.rerun()
+    st.write("---")
 
     # 3. Métricas de Alto Impacto
     saidas_totais = df[df[col_v] < 0][col_v].sum()
@@ -115,19 +117,21 @@ try:
         "📊 Projeção Mensal", "🔥 Cash Burn Diário", "🎯 Pareto (80/20)", "🏛️ Fiscal vs Op", "📋 Dados Brutos"
     ])
 
-    # ABA: PROJEÇÃO MENSAL (NOVA)
+    # ABA: PROJEÇÃO MENSAL
     with tab_proj:
-        st.subheader("Análise Evolutiva: Mês a Mês")
-        # Agrupamento por período real para o gráfico não quebrar a ordem cronológica
-        proj_mensal = df_raw.groupby('Periodo_Sort')[col_v].sum().abs().reset_index()
-        proj_mensal['Periodo_Sort'] = proj_mensal['Periodo_Sort'].astype(str)
+        st.subheader("Análise Evolutiva: Histórico Mês a Mês")
+        # Agrupamento da base completa para ver a evolução
+        proj_mensal = df_raw[df_raw[col_v] < 0].groupby('Periodo_Sort')[col_v].sum().abs().reset_index()
+        proj_mensal['Mês/Ano'] = proj_mensal['Periodo_Sort'].astype(str)
         
-        c_proj1, c_proj2 = st.columns([2, 1])
-        with c_proj1:
-            st.line_chart(proj_mensal.set_index('Periodo_Sort'), color="#38bdf8")
-        with c_proj2:
+        cp1, cp2 = st.columns([2, 1])
+        with cp1:
+            st.bar_chart(proj_mensal.set_index('Mês/Ano')[col_v], color="#38bdf8")
+        with cp2:
+            st.markdown("### Totais por Período")
+            # Exibição com formatação de moeda na tabela
             st.dataframe(
-                proj_mensal.rename(columns={'Periodo_Sort': 'Mês', col_v: 'Total Gasto'}),
+                proj_mensal[['Mês/Ano', col_v]].style.format({col_v: "R$ {:,.2f}"}),
                 hide_index=True,
                 use_container_width=True
             )
@@ -139,38 +143,34 @@ try:
             burn_df = df.groupby('Data de pagamento')[col_v].sum().cumsum().reset_index()
             st.area_chart(burn_df.set_index('Data de pagamento'), color="#f43f5e")
         else:
-            st.warning("Sem dados para o período selecionado.")
+            st.warning("Sem dados para o período.")
 
     # ABA: PARETO
     with tab_pareto:
-        st.subheader("Análise de Pareto: Foco no que importa")
+        st.subheader("Análise de Pareto: Maiores Saídas")
         saidas_somente = df[df[col_v] < 0]
         if not saidas_somente.empty:
             resumo_cat = saidas_somente.groupby('Categoria')[col_v].sum().abs().sort_values(ascending=False).reset_index()
             resumo_cat['% Acumulado'] = (resumo_cat[col_v].cumsum() / resumo_cat[col_v].sum()) * 100
-            pareto_df = resumo_cat[resumo_cat['% Acumulado'] <= 85] 
+            pareto_df = resumo_cat[resumo_cat['% Acumulado'] <= 90] 
             
             c_p1, c_p2 = st.columns([1, 2])
             with c_p1:
-                st.info("As categorias abaixo representam ~80% do seu desembolso no período.")
                 st.dataframe(
                     pareto_df[['Categoria', col_v]].style.format({col_v: "R$ {:,.2f}"}),
                     hide_index=True, use_container_width=True
                 )
             with c_p2:
                 st.bar_chart(pareto_df.set_index('Categoria')[col_v], color="#38bdf8")
-        else:
-            st.warning("Sem saídas registradas para este filtro.")
 
     # ABA: FISCAL VS OPERAÇÃO
     with tab_tax:
-        st.subheader("Distribuição Financeira por Natureza")
+        st.subheader("Distribuição por Natureza")
         c_t1, c_t2 = st.columns(2)
         with c_t1:
             dist_tipo = df.groupby('Tipo')[col_v].sum().abs()
             st.bar_chart(dist_tipo, color="#a21caf")
         with c_t2:
-            st.markdown("### Listagem de Tributos/Retenções")
             st.dataframe(
                 df[df['Tipo'] == 'Imposto/Retenção'][['Data de pagamento', 'Categoria', col_v]].style.format({col_v: "R$ {:,.2f}"}),
                 hide_index=True, use_container_width=True
