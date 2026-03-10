@@ -77,7 +77,7 @@ try:
     # Header Superior
     c1, c2 = st.columns([4, 1])
     with c1:
-        st.title("💎 CFO Intelligence: Strategic View")
+        st.title("💎 CASH FLOW PROJECT - ACCOUNTS PAYABLE")
     with c2:
         if st.button("🔄 Sincronizar Dados"):
             st.cache_data.clear()
@@ -193,4 +193,5 @@ try:
 
 except Exception as e:
     st.error(f"Erro ao carregar dashboard: {e}")
+
 
