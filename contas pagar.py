@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 
 # 1. Configuração de Página e Estilo Dark Premium
-st.set_page_config(page_title="CFO Strategic Intelligence", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="CFO Strategic Intelligence", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
@@ -58,6 +58,10 @@ def load_and_process():
     df['Data de pagamento'] = pd.to_datetime(df['Data de pagamento'], dayfirst=True, errors='coerce')
     df = df.dropna(subset=['Data de pagamento']).sort_values('Data de pagamento')
 
+    # Criar colunas de período para o filtro e projeção
+    df['Mes_Ano'] = df['Data de pagamento'].dt.strftime('%m/%Y')
+    df['Periodo_Sort'] = df['Data de pagamento'].dt.to_period('M')
+
     keywords_imposto = ['ISS', 'IRPJ', 'CSLL', 'PIS', 'COFINS', 'RETIDO', 'IMPOSTO', 'TAXA', 'DARF']
     df['Tipo'] = df['Categoria'].apply(
         lambda x: 'Imposto/Retenção' if any(k in str(x).upper() for k in keywords_imposto) else 'Operacional'
@@ -66,60 +70,97 @@ def load_and_process():
     return df
 
 try:
-    df = load_and_process()
+    df_raw = load_and_process()
     col_v = 'Valor categoria/centro de custo'
+
+    # --- SIDEBAR: FILTROS ---
+    st.sidebar.title("🛠️ Filtros Estratégicos")
+    
+    # Filtro de Mês Dinâmico
+    lista_meses = sorted(df_raw['Mes_Ano'].unique(), key=lambda x: pd.to_datetime(x, format='%m/%Y'))
+    lista_meses.insert(0, "Todos os Meses")
+    mes_selecionado = st.sidebar.selectbox("Selecione o Período:", lista_meses)
+
+    if mes_selecionado != "Todos os Meses":
+        df = df_raw[df_raw['Mes_Ano'] == mes_selecionado].copy()
+    else:
+        df = df_raw.copy()
 
     # Header Superior
     c1, c2 = st.columns([4, 1])
     with c1:
         st.title("💎 CFO Intelligence: Strategic View")
+        st.caption(f"Visualizando: **{mes_selecionado}**")
     with c2:
-        if st.button("🔄 Sincronizar Dados"):
+        if st.button("🔄 Sincronizar"):
             st.cache_data.clear()
             st.rerun()
 
-    # 3. Métricas de Alto Impacto (Formatadas em Moeda)
+    # 3. Métricas de Alto Impacto
     saidas_totais = df[df[col_v] < 0][col_v].sum()
     impostos_totais = df[df['Tipo'] == 'Imposto/Retenção'][col_v].sum()
     operacional_puro = df[df['Tipo'] == 'Operacional'][col_v].sum()
     
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Cash Out Total", format_brl(abs(saidas_totais)))
-    m2.metric("Carga Tributária", format_brl(abs(impostos_totais)), f"{abs(impostos_totais/saidas_totais)*100:.1f}% do total")
+    tax_perc = abs(impostos_totais/saidas_totais)*100 if saidas_totais != 0 else 0
+    m2.metric("Carga Tributária", format_brl(abs(impostos_totais)), f"{tax_perc:.1f}% do total")
     m3.metric("Custos Operacionais", format_brl(abs(operacional_puro)))
     m4.metric("Aging (Lançamentos)", len(df))
 
     st.write("##")
 
     # 4. Sistema de Abas Estratégicas
-    tab_burn, tab_pareto, tab_tax, tab_raw, tab_guide = st.tabs([
-        "🔥 Cash Burn Diário", "🎯 Pareto (80/20)", "🏛️ Fiscal vs Op", "📋 Dados Brutos", "📖 Guia de Uso"
+    tab_proj, tab_burn, tab_pareto, tab_tax, tab_raw = st.tabs([
+        "📊 Projeção Mensal", "🔥 Cash Burn Diário", "🎯 Pareto (80/20)", "🏛️ Fiscal vs Op", "📋 Dados Brutos"
     ])
+
+    # ABA: PROJEÇÃO MENSAL (NOVA)
+    with tab_proj:
+        st.subheader("Análise Evolutiva: Mês a Mês")
+        # Agrupamento por período real para o gráfico não quebrar a ordem cronológica
+        proj_mensal = df_raw.groupby('Periodo_Sort')[col_v].sum().abs().reset_index()
+        proj_mensal['Periodo_Sort'] = proj_mensal['Periodo_Sort'].astype(str)
+        
+        c_proj1, c_proj2 = st.columns([2, 1])
+        with c_proj1:
+            st.line_chart(proj_mensal.set_index('Periodo_Sort'), color="#38bdf8")
+        with c_proj2:
+            st.dataframe(
+                proj_mensal.rename(columns={'Periodo_Sort': 'Mês', col_v: 'Total Gasto'}),
+                hide_index=True,
+                use_container_width=True
+            )
 
     # ABA: CASH BURN
     with tab_burn:
         st.subheader("Evolução do Consumo de Caixa (Acumulado)")
-        burn_df = df.groupby('Data de pagamento')[col_v].sum().cumsum().reset_index()
-        st.area_chart(burn_df.set_index('Data de pagamento'), color="#f43f5e")
-        
+        if not df.empty:
+            burn_df = df.groupby('Data de pagamento')[col_v].sum().cumsum().reset_index()
+            st.area_chart(burn_df.set_index('Data de pagamento'), color="#f43f5e")
+        else:
+            st.warning("Sem dados para o período selecionado.")
 
     # ABA: PARETO
     with tab_pareto:
         st.subheader("Análise de Pareto: Foco no que importa")
-        resumo_cat = df[df[col_v] < 0].groupby('Categoria')[col_v].sum().abs().sort_values(ascending=False).reset_index()
-        resumo_cat['% Acumulado'] = (resumo_cat[col_v].cumsum() / resumo_cat[col_v].sum()) * 100
-        pareto_df = resumo_cat[resumo_cat['% Acumulado'] <= 85] 
-        
-        c_p1, c_p2 = st.columns([1, 2])
-        with c_p1:
-            st.info("Regra 80/20: Estas categorias representam o maior peso financeiro.")
-            # Formatando a exibição da tabela de Pareto
-            st.dataframe(
-                pareto_df[['Categoria', col_v]].style.format({col_v: "R$ {:,.2f}"}),
-                hide_index=True, use_container_width=True
-            )
-        with c_p2:
-            st.bar_chart(pareto_df.set_index('Categoria')[col_v], color="#38bdf8")
+        saidas_somente = df[df[col_v] < 0]
+        if not saidas_somente.empty:
+            resumo_cat = saidas_somente.groupby('Categoria')[col_v].sum().abs().sort_values(ascending=False).reset_index()
+            resumo_cat['% Acumulado'] = (resumo_cat[col_v].cumsum() / resumo_cat[col_v].sum()) * 100
+            pareto_df = resumo_cat[resumo_cat['% Acumulado'] <= 85] 
+            
+            c_p1, c_p2 = st.columns([1, 2])
+            with c_p1:
+                st.info("As categorias abaixo representam ~80% do seu desembolso no período.")
+                st.dataframe(
+                    pareto_df[['Categoria', col_v]].style.format({col_v: "R$ {:,.2f}"}),
+                    hide_index=True, use_container_width=True
+                )
+            with c_p2:
+                st.bar_chart(pareto_df.set_index('Categoria')[col_v], color="#38bdf8")
+        else:
+            st.warning("Sem saídas registradas para este filtro.")
 
     # ABA: FISCAL VS OPERAÇÃO
     with tab_tax:
@@ -135,34 +176,20 @@ try:
                 hide_index=True, use_container_width=True
             )
 
-    # ABA: DADOS BRUTOS (Filtros e Edição)
+    # ABA: DADOS BRUTOS
     with tab_raw:
         st.subheader("Explorador Geral")
-        busca = st.text_input("Filtrar por conta ou categoria...")
-        df_final = df[df['Categoria'].str.contains(busca, case=False)]
+        busca = st.text_input("Filtrar por conta ou categoria...", key="search_raw")
+        df_final = df[df['Categoria'].astype(str).str.contains(busca, case=False)]
         
         st.data_editor(
             df_final,
             column_config={
-                col_v: st.column_config.NumberColumn(
-                    "Valor", 
-                    format="R$ %.2f", # Formatação direta no componente Streamlit
-                    help="Valor financeiro do lançamento"
-                ),
+                col_v: st.column_config.NumberColumn("Valor", format="R$ %.2f"),
                 "Data de pagamento": st.column_config.DateColumn("Vencimento", format="DD/MM/YYYY"),
             },
             hide_index=True, use_container_width=True
         )
-
-    # ABA: GUIA DE USO
-    with tab_guide:
-        st.markdown("## 🧭 Guia do Executivo Financeiro")
-        with st.expander("🔥 O que é o Cash Burn Diário?"):
-            st.write("Representa a velocidade de consumo do caixa. Degraus fundos indicam alta concentração de pagamentos no dia.")
-        with st.expander("🎯 Como usar o Pareto (80/20)?"):
-            st.write("Foca nos 20% das categorias que geram 80% do custo. Ideal para cortes estratégicos.")
-        with st.expander("🏛️ Fiscal vs Operação"):
-            st.write("Separa o que é custo de atividade do que é obrigação tributária direta.")
 
 except Exception as e:
     st.error(f"Erro ao carregar dashboard: {e}")
