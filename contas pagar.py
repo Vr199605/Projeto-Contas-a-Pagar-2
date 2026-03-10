@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 
 # 1. Configuração de Página e Estilo Dark Premium
-st.set_page_config(page_title="CFO Strategic Intelligence", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="CASH FLOW PROJECT - ACCOUNTS PAYABLE", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
     <style>
@@ -193,3 +193,4 @@ try:
 
 except Exception as e:
     st.error(f"Erro ao carregar dashboard: {e}")
+
