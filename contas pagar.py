@@ -89,16 +89,23 @@ try:
 
     st.title("💎 CASH FLOW PROJECT - ACCOUNTS PAYABLE")
     
-    # --- MÉTRICAS DINÂMICAS ---
-    saidas_only = df[df[col_v] < 0]
+    # --- MÉTRICAS (CORRIGIDAS CONFORME IMAGEM) ---
+    saidas_only = df[df[col_v] < 0].copy()
     total_geral = saidas_only[col_v].sum()
-    cols_metricas = st.columns(len(grupos_sel) + 1)
-    with cols_metricas[0]:
+    valor_tributario = saidas_only[saidas_only['Grupo_Filtro'] == 'Tributário'][col_v].sum()
+    valor_operacional = saidas_only[saidas_only['Grupo_Filtro'] == 'Operacional'][col_v].sum()
+    aging_count = len(df)
+
+    m1, m2, m3, m4 = st.columns(4)
+    with m1:
         st.metric("Cash Out Total", format_brl(abs(total_geral)))
-    for i, grupo in enumerate(grupos_sel):
-        valor_grupo = df[df['Grupo_Filtro'] == grupo][col_v].sum()
-        with cols_metricas[i+1]:
-            st.metric(grupo, format_brl(abs(valor_grupo)))
+    with m2:
+        perc_trib = (abs(valor_tributario) / abs(total_geral) * 100) if total_geral != 0 else 0
+        st.metric("Carga Tributária", format_brl(abs(valor_tributario)), f"{perc_trib:.1f}% do total")
+    with m3:
+        st.metric("Custos Operacionais", format_brl(abs(valor_operacional)))
+    with m4:
+        st.metric("Aging (Lançamentos)", aging_count)
 
     st.write("---")
 
@@ -107,21 +114,27 @@ try:
 
     with tab_proj:
         st.subheader("📈 Evolução Mensal do Desembolso")
+        # Criando a coluna Mês/Ano explicitamente para evitar o Erro: 'Mês/Ano'
+        saidas_only['Mês/Ano'] = saidas_only['Data de pagamento'].dt.strftime('%m/%Y')
+        
         proj_mensal = saidas_only.groupby('Periodo_Sort')[col_v].sum().abs().reset_index()
-        proj_mensal['Mês/Ano'] = proj_mensal['Periodo_Sort'].astype(str)
-        st.bar_chart(proj_mensal.set_index('Mês/Ano')[col_v], color="#38bdf8")
+        proj_mensal['Mês/Ano_Label'] = proj_mensal['Periodo_Sort'].astype(str)
+        st.bar_chart(proj_mensal.set_index('Mês/Ano_Label')[col_v], color="#38bdf8")
         
         c_proj1, c_proj2 = st.columns(2)
         with c_proj1:
             st.subheader("📂 Projeção por Grupo")
+            # Agrupamento seguro
             proj_grupo = saidas_only.groupby(['Mês/Ano', 'Grupo_Filtro'])[col_v].sum().abs().unstack().fillna(0)
-            st.line_chart(proj_grupo)
+            if not proj_grupo.empty:
+                st.line_chart(proj_grupo)
             
         with c_proj2:
             st.subheader("🏷️ Projeção por Categoria (Top 5)")
             top_5_cats = saidas_only.groupby('Categoria')[col_v].sum().abs().nlargest(5).index
             proj_cat = saidas_only[saidas_only['Categoria'].isin(top_5_cats)].groupby(['Mês/Ano', 'Categoria'])[col_v].sum().abs().unstack().fillna(0)
-            st.line_chart(proj_cat)
+            if not proj_cat.empty:
+                st.line_chart(proj_cat)
 
     with tab_burn:
         st.subheader("🔥 Queima de Caixa Diária")
@@ -152,7 +165,6 @@ try:
 
     with tab_raw:
         st.subheader("📋 Lista de Lançamentos")
-        # Formatando as datas para dd/mm/aaaa no editor de dados
         st.data_editor(
             df, 
             column_config={
@@ -164,7 +176,8 @@ try:
         )
 
 except Exception as e:
-    st.error(f"Erro: {e}")
+    st.error(f"Erro inesperado: {e}")
+
 
 
 
