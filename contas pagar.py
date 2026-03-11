@@ -2,8 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-# 1. Configuração de Página e Estilo Dark Premium
-st.set_page_config(page_title="CASH FLOW PROJECT - ACCOUNTS PAYABLE", layout="wide", initial_sidebar_state="collapsed")
+# 1. Configuração de Página
+st.set_page_config(page_title="CASH FLOW PROJECT", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
@@ -17,27 +17,12 @@ st.markdown("""
         border-radius: 20px;
     }
     div[data-testid="stMetricValue"] { color: #38bdf8; font-weight: 700; }
-    
-    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
-    .stTabs [data-baseweb="tab"] {
-        background-color: #1e293b;
-        border-radius: 10px 10px 0px 0px;
-        color: white;
-        padding: 10px 20px;
-    }
-    .stTabs [aria-selected="true"] { background-color: #38bdf8 !important; color: #000 !important; }
-    
-    .stButton>button {
-        background: linear-gradient(90deg, #d946ef, #a21caf); border: none; color: white;
-        border-radius: 12px; font-weight: bold; width: 100%;
-    }
     </style>
     """, unsafe_allow_html=True)
 
 def format_brl(val):
     return f"R$ {val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-# Dicionário de Mapeamento de Grupos e Categorias
 MAPA_GRUPOS = {
     "Administrativo": ["ALUGUEL", "COMPRA DE ATIVO FIXO", "CONDOMÍNIO", "COWORKING", "CUSTO OPERACIONAL", "DESPESAS FINANCEIRAS", "ENERGIA ELÉTRICA", "ESTORNO", "EVENTOS FUNCIONÁRIOS", "Juros Pagos", "MANUTENÇÃO ESCRITÓRIO", "MATERIAIS DE TI", "MATERIAL DE COPA", "MATERIAL DE ESCRITÓRIO", "MATERIAL DE LIMPEZA", "Multas Pagas", "Não classificado", "OUTRAS DESPESAS", "PAGAMENTO DE EMPRÉSTIMO", "REPRESENTAÇÃO", "SEGUROS", "SERVIÇOS CONTÁBEIS", "SERVIÇOS CONTRATADOS", "SERVIÇOS DE E-MAIL", "SERVIÇOS DE ENTREGA", "SERVIÇOS DE PUBLICIDADE", "SERVIÇOS JURÍDICOS", "SERVIÇOS TI", "SISTEMAS", "TAXAS E CONTRIBUIÇÕES", "TELEFONIA/INTERNET", "TREINAMENTOS", "VAGAS GARAGEM - SÓCIOS"],
     "Despesa de pessoal": ["13º SALÁRIO", "ADIANTAMENTO AO FUNCIONÁRIO", "ANTECIPAÇÃO DE RESULTADOS", "ASSISTÊNCIA MÉDICA", "ASSISTÊNCIA ODONTO", "BÔNUS CLT", "BÔNUS PERFORMANCE - G", "CONSULTORIA ESPECIALIZADA - G", "CONSULTORIA ESPECIALIZADA - TI", "DESPESA EVENTUAL DE PESSOAL", "DESPESAS VIAGEM", "ESTAGIÁRIO FOLHA", "EXAMES OCUPACIONAIS", "FÉRIAS", "FGTS", "GRATIFICAÇÕES CLT", "GRATIFICAÇÕES PJ - G", "INSS", "IRRF", "LOCOMOÇÃO", "MATERIAL DE COPA", "Multas Pagas", "PRO LABORE", "REPRESENTAÇÃO", "RESCISÃO", "SALÁRIOS CLT", "SEGURO DE VIDA", "SERVIÇOS CONTRATADOS", "VA/VR", "VT"],
@@ -49,139 +34,119 @@ MAPA_GRUPOS = {
 def load_and_process():
     url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT7KV7hi8lJHEleaPoPyAKWo7ChUTlLuorbLX9v4aZGXPKI6aeudpF06eUc60hmIPX8Pkz5BrZOhc1G/pub?output=csv"
     df = pd.read_csv(url)
-    
     def clean_val(v):
         if isinstance(v, str):
             v = v.replace('R$', '').replace('.', '').replace(' ', '').replace(',', '.')
             try: return float(v)
             except: return 0.0
         return v
-
     col_v = 'Valor categoria/centro de custo'
     df[col_v] = df[col_v].apply(clean_val)
     df['Data de pagamento'] = pd.to_datetime(df['Data de pagamento'], dayfirst=True, errors='coerce')
     df = df.dropna(subset=['Data de pagamento']).sort_values('Data de pagamento')
     df['Mes_Ano'] = df['Data de pagamento'].dt.strftime('%m/%Y')
     df['Periodo_Sort'] = df['Data de pagamento'].dt.to_period('M')
-
-    # Criar coluna de Grupo no DF para facilitar o cálculo dos cards
+    
     def atribuir_grupo(cat):
         for grupo, categorias in MAPA_GRUPOS.items():
-            if cat in categorias:
-                return grupo
+            if cat in categorias: return grupo
         return "Outros"
-    
     df['Grupo_Filtro'] = df['Categoria'].apply(atribuir_grupo)
     return df
 
 try:
     df_raw = load_and_process()
     col_v = 'Valor categoria/centro de custo'
+    lista_meses = sorted(df_raw['Mes_Ano'].unique(), key=lambda x: pd.to_datetime(x, format='%m/%Y'))
+    todas_cats = sorted(list(set([c for sub in MAPA_GRUPOS.values() for c in sub])))
 
-    c1, c2 = st.columns([4, 1])
-    with c1:
-        st.title("💎 CASH FLOW PROJECT - ACCOUNTS PAYABLE")
-    with c2:
-        if st.button("🔄 Sincronizar Dados"):
+    with st.sidebar:
+        st.title("⚙️ Filtros")
+        if st.button("🔄 Sincronizar Dados", type="primary"):
             st.cache_data.clear()
             st.rerun()
-
-    # --- SEÇÃO DE FILTROS ---
-    lista_meses = sorted(df_raw['Mes_Ano'].unique(), key=lambda x: pd.to_datetime(x, format='%m/%Y'))
-    
-    f1, f2, f3 = st.columns([1, 1, 2])
-    with f1:
-        meses_sel = st.multiselect("📅 Períodos:", options=lista_meses, default=lista_meses)
-    with f2:
-        grupos_sel = st.multiselect("📂 Grupos:", options=list(MAPA_GRUPOS.keys()), default=list(MAPA_GRUPOS.keys()))
-    with f3:
-        cats_possiveis = []
+        st.write("---")
+        meses_sel = st.multiselect("📅 Períodos:", options=lista_meses, default=lista_meses, key='ms_meses')
+        grupos_sel = st.multiselect("📂 Grupos:", options=list(MAPA_GRUPOS.keys()), default=list(MAPA_GRUPOS.keys()), key='ms_grupos')
+        
+        cats_dinamicas = []
         for g in grupos_sel:
-            cats_possiveis.extend(MAPA_GRUPOS[g])
-        cats_possiveis = sorted(list(set(cats_possiveis)))
-        cats_sel = st.multiselect("🏷️ Categorias:", options=cats_possiveis, default=cats_possiveis)
+            cats_dinamicas.extend(MAPA_GRUPOS[g])
+        cats_dinamicas = sorted(list(set(cats_dinamicas)))
+        cats_sel = st.multiselect("🏷️ Categorias:", options=cats_dinamicas, default=cats_dinamicas, key='ms_cats')
+        
+        if st.button("🧹 Limpar Filtros"):
+            st.session_state.ms_meses = lista_meses
+            st.session_state.ms_grupos = list(MAPA_GRUPOS.keys())
+            st.session_state.ms_cats = todas_cats
+            st.rerun()
 
-    # Aplicação dos Filtros no DF principal
+    # Aplicação dos Filtros
     df = df_raw.copy()
-    if meses_sel:
-        df = df[df['Mes_Ano'].isin(meses_sel)]
-    if grupos_sel:
-        df = df[df['Grupo_Filtro'].isin(grupos_sel)]
-    if cats_sel:
-        df = df[df['Categoria'].isin(cats_sel)]
+    if meses_sel: df = df[df['Mes_Ano'].isin(meses_sel)]
+    if grupos_sel: df = df[df['Grupo_Filtro'].isin(grupos_sel)]
+    if cats_sel: df = df[df['Categoria'].isin(cats_sel)]
+
+    st.title("💎 CASH FLOW PROJECT - ACCOUNTS PAYABLE")
+    
+    # --- MÉTRICAS DINÂMICAS ---
+    total_geral = df[df[col_v] < 0][col_v].sum()
+    cols_metricas = st.columns(len(grupos_sel) + 1)
+    with cols_metricas[0]:
+        st.metric("Cash Out Total", format_brl(abs(total_geral)))
+    for i, grupo in enumerate(grupos_sel):
+        valor_grupo = df[df['Grupo_Filtro'] == grupo][col_v].sum()
+        with cols_metricas[i+1]:
+            st.metric(grupo, format_brl(abs(valor_grupo)))
 
     st.write("---")
 
-    # --- MÉTRICAS DINÂMICAS CONFORME FILTRO ---
-    # Agora as métricas somam apenas o que está visível (filtrado)
-    total_saidas = df[df[col_v] < 0][col_v].sum()
-    
-    # Soma específica por grupo dentro do que foi filtrado
-    valor_tributario = df[df['Grupo_Filtro'] == 'Tributário'][col_v].sum()
-    valor_operacional = df[df['Grupo_Filtro'] == 'Operacional'][col_v].sum()
-    valor_administrativo = df[df['Grupo_Filtro'] == 'Administrativo'][col_v].sum()
-    valor_pessoal = df[df['Grupo_Filtro'] == 'Despesa de pessoal'][col_v].sum()
-
-    m1, m2, m3, m4 = st.columns(4)
-    # Card 1: Total Geral Filtrado
-    m1.metric("Cash Out Total", format_brl(abs(total_saidas)))
-    
-    # Card 2: Somente Tributário filtrado
-    tax_perc = abs(valor_tributario/total_saidas)*100 if total_saidas != 0 else 0
-    m2.metric("Total Tributário", format_brl(abs(valor_tributario)), f"{tax_perc:.1f}% do selecionado")
-    
-    # Card 3: Somente Operacional filtrado
-    m3.metric("Total Operacional", format_brl(abs(valor_operacional)))
-    
-    # Card 4: Total Administrativo + Pessoal (para fechar os 4 cards da imagem)
-    m4.metric("Adm. & Pessoal", format_brl(abs(valor_administrativo + valor_pessoal)))
-
-    st.write("##")
-
     # --- ABAS ---
-    tab_proj, tab_burn, tab_pareto, tab_raw = st.tabs([
-        "📊 Projeção Mensal", "🔥 Cash Burn Diário", "🎯 Pareto (80/20)", "📋 Dados Brutos"
-    ])
+    tab_proj, tab_burn, tab_pareto, tab_raw = st.tabs(["📊 Projeção Mensal", "🔥 Cash Burn Diário", "🎯 Pareto (80/20)", "📋 Dados Brutos"])
 
     with tab_proj:
-        st.subheader("Análise Evolutiva (Baseado nos Filtros)")
         proj_mensal = df[df[col_v] < 0].groupby('Periodo_Sort')[col_v].sum().abs().reset_index()
         proj_mensal['Mês/Ano'] = proj_mensal['Periodo_Sort'].astype(str)
-        
-        cp1, cp2 = st.columns([2, 1])
-        with cp1:
-            if not proj_mensal.empty:
-                st.bar_chart(proj_mensal.set_index('Mês/Ano')[col_v], color="#38bdf8")
-        with cp2:
-            st.dataframe(
-                proj_mensal[['Mês/Ano', col_v]].style.format({col_v: "R$ {:,.2f}"}),
-                hide_index=True, use_container_width=True
-            )
+        st.bar_chart(proj_mensal.set_index('Mês/Ano')[col_v], color="#38bdf8")
 
-    with tab_burn:
-        st.subheader("Evolução do Consumo (Acumulado)")
-        if not df.empty:
-            burn_df = df.groupby('Data de pagamento')[col_v].sum().cumsum().reset_index()
-            st.area_chart(burn_df.set_index('Data de pagamento'), color="#f43f5e")
-
+    # --- ABA PARETO ATUALIZADA ---
     with tab_pareto:
-        st.subheader("Pareto por Categoria")
-        saidas_somente = df[df[col_v] < 0]
-        if not saidas_somente.empty:
-            resumo_cat = saidas_somente.groupby('Categoria')[col_v].sum().abs().sort_values(ascending=False).reset_index()
-            st.bar_chart(resumo_cat.set_index('Categoria')[col_v], color="#38bdf8")
+        st.subheader("🎯 Ranking de Maiores Gastos")
+        saidas = df[df[col_v] < 0].copy()
+        
+        if not saidas.empty:
+            c1, c2 = st.columns(2)
+            
+            with c1:
+                st.markdown("### 📂 Maiores Gastos por Grupo")
+                pareto_grupo = saidas.groupby('Grupo_Filtro')[col_v].sum().abs().reset_index()
+                pareto_grupo.columns = ['Grupo', 'Total Gasto']
+                pareto_grupo = pareto_grupo.sort_values('Total Gasto', ascending=False)
+                
+                st.dataframe(
+                    pareto_grupo.style.format({'Total Gasto': "R$ {:,.2f}"}),
+                    use_container_width=True, hide_index=True
+                )
+                st.bar_chart(pareto_grupo.set_index('Grupo')['Total Gasto'], color="#f43f5e")
+
+            with c2:
+                st.markdown("### 🏷️ Maiores Gastos por Categoria")
+                pareto_cat = saidas.groupby('Categoria')[col_v].sum().abs().reset_index()
+                pareto_cat.columns = ['Categoria', 'Total Gasto']
+                pareto_cat = pareto_cat.sort_values('Total Gasto', ascending=False)
+                
+                st.dataframe(
+                    pareto_cat.style.format({'Total Gasto': "R$ {:,.2f}"}),
+                    use_container_width=True, hide_index=True
+                )
+                st.bar_chart(pareto_cat.head(10).set_index('Categoria')['Total Gasto'], color="#38bdf8")
+        else:
+            st.info("Nenhum dado de saída encontrado para os filtros atuais.")
 
     with tab_raw:
-        st.subheader("Explorador Geral")
-        st.data_editor(
-            df,
-            column_config={
-                col_v: st.column_config.NumberColumn("Valor", format="R$ %.2f"),
-                "Data de pagamento": st.column_config.DateColumn("Vencimento", format="DD/MM/YYYY"),
-            },
-            hide_index=True, use_container_width=True
-        )
+        st.data_editor(df, column_config={col_v: st.column_config.NumberColumn("Valor", format="R$ %.2f")}, use_container_width=True, hide_index=True)
 
 except Exception as e:
     st.error(f"Erro: {e}")
+
 
