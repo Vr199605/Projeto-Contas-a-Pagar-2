@@ -1,9 +1,8 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
 
-# 1. Configuração de Página e Estilo
+# 1. Configuração de Página e Estilo Dark
 st.set_page_config(page_title="CASH FLOW PROJECT", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
@@ -18,9 +17,6 @@ st.markdown("""
         border-radius: 20px;
     }
     div[data-testid="stMetricValue"] { color: #38bdf8; font-weight: 700; }
-    
-    /* Ajuste para alinhar os gráficos de pizza */
-    .main .block-container { padding-top: 2rem; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -62,9 +58,7 @@ try:
     df_raw = load_and_process()
     col_v = 'Valor categoria/centro de custo'
     lista_meses = sorted(df_raw['Mes_Ano'].unique(), key=lambda x: pd.to_datetime(x, format='%m/%Y'))
-    todas_cats = sorted(list(set([c for sub in MAPA_GRUPOS.values() for c in sub])))
 
-    # --- SIDEBAR ---
     with st.sidebar:
         st.title("⚙️ Filtros")
         if st.button("🔄 Sincronizar Dados", type="primary"):
@@ -74,17 +68,8 @@ try:
         meses_sel = st.multiselect("📅 Períodos:", options=lista_meses, default=lista_meses, key='ms_meses')
         grupos_sel = st.multiselect("📂 Grupos:", options=list(MAPA_GRUPOS.keys()), default=list(MAPA_GRUPOS.keys()), key='ms_grupos')
         
-        cats_dinamicas = []
-        for g in grupos_sel:
-            cats_dinamicas.extend(MAPA_GRUPOS[g])
-        cats_dinamicas = sorted(list(set(cats_dinamicas)))
+        cats_dinamicas = sorted(list(set([cat for g in grupos_sel for cat in MAPA_GRUPOS[g]])))
         cats_sel = st.multiselect("🏷️ Categorias:", options=cats_dinamicas, default=cats_dinamicas, key='ms_cats')
-        
-        if st.button("🧹 Limpar Filtros"):
-            st.session_state.ms_meses = lista_meses
-            st.session_state.ms_grupos = list(MAPA_GRUPOS.keys())
-            st.session_state.ms_cats = todas_cats
-            st.rerun()
 
     # Aplicação dos Filtros
     df = df_raw.copy()
@@ -99,7 +84,6 @@ try:
     total_geral = saidas_only[col_v].sum()
     valor_tributario = saidas_only[saidas_only['Grupo_Filtro'] == 'Tributário'][col_v].sum()
     valor_operacional = saidas_only[saidas_only['Grupo_Filtro'] == 'Operacional'][col_v].sum()
-    aging_count = len(df)
 
     m1, m2, m3, m4 = st.columns(4)
     with m1:
@@ -110,83 +94,76 @@ try:
     with m3:
         st.metric("Custos Operacionais", format_brl(abs(valor_operacional)))
     with m4:
-        st.metric("Aging (Lançamentos)", aging_count)
+        st.metric("Aging (Lançamentos)", len(df))
 
     st.write("---")
 
-    # --- ABAS ---
     tab_proj, tab_burn, tab_pareto, tab_raw = st.tabs(["📊 Projeção Mensal", "🔥 Cash Burn Diário", "🎯 Pareto (80/20)", "📋 Dados Brutos"])
 
     with tab_proj:
-        st.subheader("📈 Evolução Mensal do Desembolso")
+        st.subheader("📈 Evolução Mensal")
         saidas_only['Mês/Ano'] = saidas_only['Data de pagamento'].dt.strftime('%m/%Y')
-        proj_mensal = saidas_only.groupby('Periodo_Sort')[col_v].sum().abs().reset_index()
-        proj_mensal['Mês/Ano_Label'] = proj_mensal['Periodo_Sort'].astype(str)
-        st.bar_chart(proj_mensal.set_index('Mês/Ano_Label')[col_v], color="#38bdf8")
+        proj_m = saidas_only.groupby('Periodo_Sort')[col_v].sum().abs().reset_index()
+        proj_m['Mês/Ano_Label'] = proj_m['Periodo_Sort'].astype(str)
+        st.bar_chart(proj_m.set_index('Mês/Ano_Label')[col_v], color="#38bdf8")
         
-        cp1, cp2 = st.columns(2)
-        with cp1:
-            st.markdown("### 📂 Projeção por Grupo")
-            proj_g = saidas_only.groupby(['Mês/Ano', 'Grupo_Filtro'])[col_v].sum().abs().unstack().fillna(0)
-            if not proj_g.empty: st.line_chart(proj_g)
-        with cp2:
-            st.markdown("### 🏷️ Projeção por Categoria (Top 5)")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.write("**Por Grupo**")
+            st.line_chart(saidas_only.groupby(['Mês/Ano', 'Grupo_Filtro'])[col_v].sum().abs().unstack().fillna(0))
+        with c2:
+            st.write("**Top 5 Categorias**")
             top5 = saidas_only.groupby('Categoria')[col_v].sum().abs().nlargest(5).index
-            proj_c = saidas_only[saidas_only['Categoria'].isin(top5)].groupby(['Mês/Ano', 'Categoria'])[col_v].sum().abs().unstack().fillna(0)
-            if not proj_c.empty: st.line_chart(proj_c)
+            st.line_chart(saidas_only[saidas_only['Categoria'].isin(top5)].groupby(['Mês/Ano', 'Categoria'])[col_v].sum().abs().unstack().fillna(0))
 
     with tab_burn:
-        st.subheader("🔥 Queima de Caixa Diária")
+        st.subheader("🔥 Queima de Caixa Acumulada")
         if not saidas_only.empty:
-            burn = saidas_only.groupby('Data de pagamento')[col_v].sum().abs().reset_index()
-            burn['Acumulado'] = burn[col_v].cumsum()
-            st.area_chart(burn.set_index('Data de pagamento')['Acumulado'], color="#f43f5e")
+            burn = saidas_only.groupby('Data de pagamento')[col_v].sum().abs().cumsum()
+            st.area_chart(burn, color="#f43f5e")
 
     with tab_pareto:
-        st.subheader("🎯 Análise de Distribuição (Pizza & Ranking)")
+        st.subheader("🎯 Análise de Pareto")
         if not saidas_only.empty:
             col_p1, col_p2 = st.columns(2)
             
+            def render_donut(data, label_col, value_col, color_scheme):
+                spec = {
+                    "mark": {"type": "arc", "innerRadius": 50, "tooltip": True},
+                    "encoding": {
+                        "theta": {"field": value_col, "type": "quantitative"},
+                        "color": {"field": label_col, "type": "nominal", "scale": {"scheme": color_scheme}},
+                    },
+                    "view": {"stroke": None}
+                }
+                return st.vega_lite_chart(data, spec, use_container_width=True)
+
             with col_p1:
-                st.markdown("### 📂 Gastos por Grupo")
+                st.write("### 📂 Gastos por Grupo")
                 df_g = saidas_only.groupby('Grupo_Filtro')[col_v].sum().abs().reset_index()
-                df_g.columns = ['Grupo', 'Total Gasto']
-                
-                fig1 = px.pie(df_g, values='Total Gasto', names='Grupo', hole=0.4, 
-                             color_discrete_sequence=px.colors.sequential.RdBu)
-                fig1.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=350)
-                st.plotly_chart(fig1, use_container_width=True)
-                
-                st.dataframe(df_g.sort_values('Total Gasto', ascending=False).style.format({'Total Gasto': "R$ {:,.2f}"}), use_container_width=True, hide_index=True)
-                st.bar_chart(df_g.set_index('Grupo')['Total Gasto'], color="#f43f5e")
+                df_g.columns = ['Grupo', 'Valor']
+                render_donut(df_g, 'Grupo', 'Valor', 'reds')
+                st.dataframe(df_g.sort_values('Valor', ascending=False).style.format({'Valor': "R$ {:,.2f}"}), use_container_width=True, hide_index=True)
+                st.bar_chart(df_g.set_index('Grupo')['Valor'], color="#f43f5e")
 
             with col_p2:
-                st.markdown("### 🏷️ Top 10 Categorias")
+                st.write("### 🏷️ Top 10 Categorias")
                 df_c = saidas_only.groupby('Categoria')[col_v].sum().abs().reset_index()
-                df_c.columns = ['Categoria', 'Total Gasto']
-                df_c_top = df_c.sort_values('Total Gasto', ascending=False).head(10)
-                
-                fig2 = px.pie(df_c_top, values='Total Gasto', names='Categoria', hole=0.4,
-                             color_discrete_sequence=px.colors.sequential.Blues_r)
-                fig2.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=350)
-                st.plotly_chart(fig2, use_container_width=True)
-                
-                st.dataframe(df_c.sort_values('Total Gasto', ascending=False).style.format({'Total Gasto': "R$ {:,.2f}"}), use_container_width=True, hide_index=True)
-                st.bar_chart(df_c_top.set_index('Categoria')['Total Gasto'], color="#38bdf8")
+                df_c.columns = ['Categoria', 'Valor']
+                df_c_top = df_c.sort_values('Valor', ascending=False).head(10)
+                render_donut(df_c_top, 'Categoria', 'Valor', 'blues')
+                st.dataframe(df_c.sort_values('Valor', ascending=False).style.format({'Valor': "R$ {:,.2f}"}), use_container_width=True, hide_index=True)
+                st.bar_chart(df_c_top.set_index('Categoria')['Valor'], color="#38bdf8")
 
     with tab_raw:
-        st.subheader("📋 Lista de Lançamentos")
-        st.data_editor(
-            df, 
-            column_config={
+        st.data_editor(df, column_config={
                 col_v: st.column_config.NumberColumn("Valor", format="R$ %.2f"),
-                "Data de pagamento": st.column_config.DateColumn("Data", format="DD/MM/YYYY")
-            }, 
-            use_container_width=True, hide_index=True
-        )
+                "Data de pagamento": st.column_config.DateColumn("Data de Pagamento", format="DD/MM/YYYY")
+            }, use_container_width=True, hide_index=True)
 
 except Exception as e:
-    st.error(f"Erro Crítico: {e}")
+    st.error(f"Erro: {e}")
+
 
 
 
