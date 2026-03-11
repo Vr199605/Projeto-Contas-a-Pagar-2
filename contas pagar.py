@@ -123,20 +123,26 @@ try:
     tab1, tab2, tab3, tab4 = st.tabs(["📊 EVOLUÇÃO", "🔥 CASH BURN", "🎯 PARETO", "📋 DADOS"])
 
     with tab1:
-        st.subheader("Projeção Mensal de Desembolso")
-        proj = saidas_df.groupby('Periodo_Sort')[col_v].sum().abs().reset_index()
-        proj['Mês'] = proj['Periodo_Sort'].astype(str)
-        st.area_chart(proj.set_index('Mês')[col_v], color="#00D1FF")
+        st.subheader("Apresentação do Dashboard Executivo")
+        st.markdown(f"""
+        Este dashboard foi desenvolvido para fornecer à **Diretoria e Sócios** uma visão clara e objetiva da saúde financeira da operação, focando estritamente no fluxo de saídas (Contas a Pagar). 
+        
+        **Objetivos desta ferramenta:**
+        * **Transparência Total:** Monitoramento em tempo real do destino do capital da empresa.
+        * **Análise de Eficiência:** Identificação rápida de custos que excedem o planejado através do ranking de categorias.
+        * **Gestão de Queima (Cash Burn):** Acompanhamento diário acumulado para garantir que o fluxo de desembolso esteja alinhado com as metas de liquidez.
+        * **Tomada de Decisão Estratégica:** Filtros dinâmicos que permitem isolar grupos como Pessoal, Operacional e Tributário para ajustes precisos na estrutura de custos.
+        
+        *Utilize os filtros laterais para navegar entre períodos e categorias específicas.*
+        """)
 
     with tab2:
         st.subheader("Queima de Caixa Diária (Acumulada)")
         if not saidas_df.empty:
-            # Correção do Cash Burn: Agrupar por data, somar e acumular
             burn = saidas_df.groupby('Data de pagamento')[col_v].sum().abs().cumsum().reset_index()
             burn.columns = ['Data', 'Gasto Acumulado']
             st.line_chart(burn.set_index('Data')['Gasto Acumulado'], color="#FF4B4B")
             
-            # Tabela de apoio
             st.write("#### Detalhamento de Saída Diária")
             diario = saidas_df.groupby('Data de pagamento')[col_v].sum().abs().reset_index()
             diario.columns = ['Data', 'Valor do Dia']
@@ -150,10 +156,13 @@ try:
             st.subheader("Maiores Gastos por Grupo")
             g_pareto = saidas_df.groupby('Grupo_Filtro')[col_v].sum().abs().sort_values(ascending=False).reset_index()
             st.dataframe(g_pareto.style.format({col_v: "R$ {:,.2f}"}), use_container_width=True, hide_index=True)
+            st.bar_chart(g_pareto.set_index('Grupo_Filtro')[col_v], color="#00D1FF")
+
         with c2:
             st.subheader("Top 10 Categorias")
             c_pareto = saidas_df.groupby('Categoria')[col_v].sum().abs().sort_values(ascending=False).head(10).reset_index()
             st.dataframe(c_pareto.style.format({col_v: "R$ {:,.2f}"}), use_container_width=True, hide_index=True)
+            st.bar_chart(c_pareto.set_index('Categoria')[col_v], color="#00D1FF")
 
     with tab4:
         st.subheader("Explorador de Lançamentos")
