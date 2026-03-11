@@ -2,21 +2,44 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-# 1. Configuração de Página
-st.set_page_config(page_title="CASH FLOW PROJECT", layout="wide", initial_sidebar_state="expanded")
+# 1. Configuração de Página e Layout Dark Luxo
+st.set_page_config(page_title="CASH FLOW | AP", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700&display=swap');
-    html, body, [class*="css"] { font-family: 'Inter', sans-serif; background-color: #0E1117; }
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap');
     
+    /* Global Style */
+    .main { background-color: #0B0E14; }
+    div[data-testid="stMetricValue"] { color: #00D1FF; font-weight: 700; font-size: 1.8rem !important; }
+    div[data-testid="stMetricLabel"] { color: #94A3B8; font-weight: 400; }
+    
+    /* Containers das Métricas */
     div[data-testid="metric-container"] {
-        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-        border: 1px solid #334155;
-        padding: 20px;
-        border-radius: 20px;
+        background: rgba(30, 41, 59, 0.5);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 25px;
+        border-radius: 15px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
     }
-    div[data-testid="stMetricValue"] { color: #38bdf8; font-weight: 700; }
+
+    /* Estilização das Abas */
+    .stTabs [data-baseweb="tab-list"] { gap: 8px; background-color: transparent; }
+    .stTabs [data-baseweb="tab"] {
+        height: 45px;
+        background-color: #1E293B;
+        border-radius: 8px 8px 0 0;
+        color: #94A3B8;
+        padding: 10px 20px;
+        font-weight: 600;
+    }
+    .stTabs [aria-selected="true"] { 
+        background-color: #00D1FF !important; 
+        color: #0B0E14 !important; 
+    }
+
+    /* Sidebar Custom */
+    .css-1d391kg { background-color: #111827; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -61,25 +84,16 @@ try:
     todas_cats = sorted(list(set([c for sub in MAPA_GRUPOS.values() for c in sub])))
 
     with st.sidebar:
-        st.title("⚙️ Filtros")
-        if st.button("🔄 Sincronizar Dados", type="primary"):
+        st.markdown("<h2 style='color: #00D1FF;'>💎 DASHBOARD</h2>", unsafe_allow_html=True)
+        if st.button("🔄 Atualizar Dados", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
         st.write("---")
-        meses_sel = st.multiselect("📅 Períodos:", options=lista_meses, default=lista_meses, key='ms_meses')
-        grupos_sel = st.multiselect("📂 Grupos:", options=list(MAPA_GRUPOS.keys()), default=list(MAPA_GRUPOS.keys()), key='ms_grupos')
+        meses_sel = st.multiselect("📅 Períodos:", options=lista_meses, default=lista_meses)
+        grupos_sel = st.multiselect("📂 Grupos:", options=list(MAPA_GRUPOS.keys()), default=list(MAPA_GRUPOS.keys()))
         
-        cats_dinamicas = []
-        for g in grupos_sel:
-            cats_dinamicas.extend(MAPA_GRUPOS[g])
-        cats_dinamicas = sorted(list(set(cats_dinamicas)))
-        cats_sel = st.multiselect("🏷️ Categorias:", options=cats_dinamicas, default=cats_dinamicas, key='ms_cats')
-        
-        if st.button("🧹 Limpar Filtros"):
-            st.session_state.ms_meses = lista_meses
-            st.session_state.ms_grupos = list(MAPA_GRUPOS.keys())
-            st.session_state.ms_cats = todas_cats
-            st.rerun()
+        cats_dinamicas = [cat for g in grupos_sel for cat in MAPA_GRUPOS[g]]
+        cats_sel = st.multiselect("🏷️ Categorias:", options=sorted(list(set(cats_dinamicas))), default=sorted(list(set(cats_dinamicas))))
 
     # Aplicação dos Filtros
     df = df_raw.copy()
@@ -87,93 +101,63 @@ try:
     if grupos_sel: df = df[df['Grupo_Filtro'].isin(grupos_sel)]
     if cats_sel: df = df[df['Categoria'].isin(cats_sel)]
 
-    st.title("💎 CASH FLOW PROJECT - ACCOUNTS PAYABLE")
+    # --- HEADER PRINCIPAL ---
+    st.title("💸 Cash Flow | Accounts Payable")
+    st.markdown(f"<p style='color: #94A3B8;'>Análise detalhada de saídas e projeções financeiras</p>", unsafe_allow_html=True)
     
-    # --- MÉTRICAS (CORRIGIDAS CONFORME IMAGEM) ---
-    saidas_only = df[df[col_v] < 0].copy()
-    total_geral = saidas_only[col_v].sum()
-    valor_tributario = saidas_only[saidas_only['Grupo_Filtro'] == 'Tributário'][col_v].sum()
-    valor_operacional = saidas_only[saidas_only['Grupo_Filtro'] == 'Operacional'][col_v].sum()
-    aging_count = len(df)
-
-    m1, m2, m3, m4 = st.columns(4)
-    with m1:
-        st.metric("Cash Out Total", format_brl(abs(total_geral)))
-    with m2:
-        perc_trib = (abs(valor_tributario) / abs(total_geral) * 100) if total_geral != 0 else 0
-        st.metric("Carga Tributária", format_brl(abs(valor_tributario)), f"{perc_trib:.1f}% do total")
-    with m3:
-        st.metric("Custos Operacionais", format_brl(abs(valor_operacional)))
-    with m4:
-        st.metric("Aging (Lançamentos)", aging_count)
+    # Métricas Dinâmicas
+    saidas_df = df[df[col_v] < 0]
+    total_geral = saidas_df[col_v].sum()
+    
+    cols_m = st.columns(len(grupos_sel) + 1)
+    with cols_m[0]:
+        st.metric("CASH OUT TOTAL", format_brl(abs(total_geral)))
+    
+    for i, grupo in enumerate(grupos_sel):
+        val_g = df[(df['Grupo_Filtro'] == grupo) & (df[col_v] < 0)][col_v].sum()
+        with cols_m[i+1]:
+            st.metric(grupo.upper(), format_brl(abs(val_g)))
 
     st.write("---")
 
-    # --- ABAS ---
-    tab_proj, tab_burn, tab_pareto, tab_raw = st.tabs(["📊 Projeção Mensal", "🔥 Cash Burn Diário", "🎯 Pareto (80/20)", "📋 Dados Brutos"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 EVOLUÇÃO", "🔥 CASH BURN", "🎯 PARETO", "📋 DADOS"])
 
-    with tab_proj:
-        st.subheader("📈 Evolução Mensal do Desembolso")
-        # Criando a coluna Mês/Ano explicitamente para evitar o Erro: 'Mês/Ano'
-        saidas_only['Mês/Ano'] = saidas_only['Data de pagamento'].dt.strftime('%m/%Y')
-        
-        proj_mensal = saidas_only.groupby('Periodo_Sort')[col_v].sum().abs().reset_index()
-        proj_mensal['Mês/Ano_Label'] = proj_mensal['Periodo_Sort'].astype(str)
-        st.bar_chart(proj_mensal.set_index('Mês/Ano_Label')[col_v], color="#38bdf8")
-        
-        c_proj1, c_proj2 = st.columns(2)
-        with c_proj1:
-            st.subheader("📂 Projeção por Grupo")
-            # Agrupamento seguro
-            proj_grupo = saidas_only.groupby(['Mês/Ano', 'Grupo_Filtro'])[col_v].sum().abs().unstack().fillna(0)
-            if not proj_grupo.empty:
-                st.line_chart(proj_grupo)
+    with tab1:
+        st.subheader("Projeção Mensal de Desembolso")
+        proj = saidas_df.groupby('Periodo_Sort')[col_v].sum().abs().reset_index()
+        proj['Mês'] = proj['Periodo_Sort'].astype(str)
+        st.area_chart(proj.set_index('Mês')[col_v], color="#00D1FF")
+
+    with tab2:
+        st.subheader("Queima de Caixa Diária (Acumulada)")
+        if not saidas_df.empty:
+            # Correção do Cash Burn: Agrupar por data, somar e acumular
+            burn = saidas_df.groupby('Data de pagamento')[col_v].sum().abs().cumsum().reset_index()
+            burn.columns = ['Data', 'Gasto Acumulado']
+            st.line_chart(burn.set_index('Data')['Gasto Acumulado'], color="#FF4B4B")
             
-        with c_proj2:
-            st.subheader("🏷️ Projeção por Categoria (Top 5)")
-            top_5_cats = saidas_only.groupby('Categoria')[col_v].sum().abs().nlargest(5).index
-            proj_cat = saidas_only[saidas_only['Categoria'].isin(top_5_cats)].groupby(['Mês/Ano', 'Categoria'])[col_v].sum().abs().unstack().fillna(0)
-            if not proj_cat.empty:
-                st.line_chart(proj_cat)
+            # Tabela de apoio
+            st.write("#### Detalhamento de Saída Diária")
+            diario = saidas_df.groupby('Data de pagamento')[col_v].sum().abs().reset_index()
+            diario.columns = ['Data', 'Valor do Dia']
+            st.dataframe(diario.style.format({'Valor do Dia': "R$ {:,.2f}"}), use_container_width=True, hide_index=True)
+        else:
+            st.info("Sem saídas registradas para este filtro.")
 
-    with tab_burn:
-        st.subheader("🔥 Queima de Caixa Diária")
-        if not saidas_only.empty:
-            burn_diario = saidas_only.groupby('Data de pagamento')[col_v].sum().abs().reset_index()
-            burn_diario['Acumulado'] = burn_diario[col_v].cumsum()
-            st.area_chart(burn_diario.set_index('Data de pagamento')['Acumulado'], color="#f43f5e")
+    with tab3:
+        c1, c2 = st.columns(2)
+        with c1:
+            st.subheader("Maiores Gastos por Grupo")
+            g_pareto = saidas_df.groupby('Grupo_Filtro')[col_v].sum().abs().sort_values(ascending=False).reset_index()
+            st.dataframe(g_pareto.style.format({col_v: "R$ {:,.2f}"}), use_container_width=True, hide_index=True)
+        with c2:
+            st.subheader("Top 10 Categorias")
+            c_pareto = saidas_df.groupby('Categoria')[col_v].sum().abs().sort_values(ascending=False).head(10).reset_index()
+            st.dataframe(c_pareto.style.format({col_v: "R$ {:,.2f}"}), use_container_width=True, hide_index=True)
 
-    with tab_pareto:
-        st.subheader("🎯 Ranking de Maiores Gastos")
-        if not saidas_only.empty:
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown("### 📂 Maiores Gastos por Grupo")
-                pareto_grupo = saidas_only.groupby('Grupo_Filtro')[col_v].sum().abs().reset_index()
-                pareto_grupo.columns = ['Grupo', 'Total Gasto']
-                pareto_grupo = pareto_grupo.sort_values('Total Gasto', ascending=False)
-                st.dataframe(pareto_grupo.style.format({'Total Gasto': "R$ {:,.2f}"}), use_container_width=True, hide_index=True)
-                st.bar_chart(pareto_grupo.set_index('Grupo')['Total Gasto'], color="#f43f5e")
-
-            with c2:
-                st.markdown("### 🏷️ Maiores Gastos por Categoria")
-                pareto_cat = saidas_only.groupby('Categoria')[col_v].sum().abs().reset_index()
-                pareto_cat.columns = ['Categoria', 'Total Gasto']
-                pareto_cat = pareto_cat.sort_values('Total Gasto', ascending=False)
-                st.dataframe(pareto_cat.style.format({'Total Gasto': "R$ {:,.2f}"}), use_container_width=True, hide_index=True)
-                st.bar_chart(pareto_cat.head(10).set_index('Categoria')['Total Gasto'], color="#38bdf8")
-
-    with tab_raw:
-        st.subheader("📋 Lista de Lançamentos")
-        st.data_editor(
-            df, 
-            column_config={
-                col_v: st.column_config.NumberColumn("Valor", format="R$ %.2f"),
-                "Data de pagamento": st.column_config.DateColumn("Data de Pagamento", format="DD/MM/YYYY")
-            }, 
-            use_container_width=True, 
-            hide_index=True
-        )
+    with tab4:
+        st.subheader("Explorador de Lançamentos")
+        st.dataframe(df, use_container_width=True, hide_index=True)
 
 except Exception as e:
-    st.error(f"Erro inesperado: {e}")
+    st.error(f"Erro ao carregar layout: {e}")
