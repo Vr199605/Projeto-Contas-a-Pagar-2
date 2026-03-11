@@ -64,10 +64,14 @@ def load_and_process():
     df['Mes_Ano'] = df['Data de pagamento'].dt.strftime('%m/%Y')
     df['Periodo_Sort'] = df['Data de pagamento'].dt.to_period('M')
 
-    keywords_imposto = ['ISS', 'IRPJ', 'CSLL', 'PIS', 'COFINS', 'RETIDO', 'IMPOSTO', 'TAXA', 'DARF']
-    df['Tipo'] = df['Categoria'].apply(
-        lambda x: 'Imposto/Retenção' if any(k in str(x).upper() for k in keywords_imposto) else 'Operacional'
-    )
+    # Criar coluna de Grupo no DF para facilitar o cálculo dos cards
+    def atribuir_grupo(cat):
+        for grupo, categorias in MAPA_GRUPOS.items():
+            if cat in categorias:
+                return grupo
+        return "Outros"
+    
+    df['Grupo_Filtro'] = df['Categoria'].apply(atribuir_grupo)
     return df
 
 try:
@@ -91,43 +95,56 @@ try:
     with f2:
         grupos_sel = st.multiselect("📂 Grupos:", options=list(MAPA_GRUPOS.keys()), default=list(MAPA_GRUPOS.keys()))
     with f3:
-        # Categorias filtradas de acordo com os grupos escolhidos
         cats_possiveis = []
         for g in grupos_sel:
             cats_possiveis.extend(MAPA_GRUPOS[g])
-        cats_possiveis = sorted(list(set(cats_possiveis))) # Remove duplicatas entre grupos
+        cats_possiveis = sorted(list(set(cats_possiveis)))
         cats_sel = st.multiselect("🏷️ Categorias:", options=cats_possiveis, default=cats_possiveis)
 
-    # Aplicação Cascata dos Filtros
+    # Aplicação dos Filtros no DF principal
     df = df_raw.copy()
     if meses_sel:
         df = df[df['Mes_Ano'].isin(meses_sel)]
+    if grupos_sel:
+        df = df[df['Grupo_Filtro'].isin(grupos_sel)]
     if cats_sel:
         df = df[df['Categoria'].isin(cats_sel)]
 
     st.write("---")
 
-    # 3. Métricas Dinâmicas
-    saidas_totais = df[df[col_v] < 0][col_v].sum()
-    impostos_totais = df[df['Tipo'] == 'Imposto/Retenção'][col_v].sum()
-    operacional_puro = df[df['Tipo'] == 'Operacional'][col_v].sum()
+    # --- MÉTRICAS DINÂMICAS CONFORME FILTRO ---
+    # Agora as métricas somam apenas o que está visível (filtrado)
+    total_saidas = df[df[col_v] < 0][col_v].sum()
     
+    # Soma específica por grupo dentro do que foi filtrado
+    valor_tributario = df[df['Grupo_Filtro'] == 'Tributário'][col_v].sum()
+    valor_operacional = df[df['Grupo_Filtro'] == 'Operacional'][col_v].sum()
+    valor_administrativo = df[df['Grupo_Filtro'] == 'Administrativo'][col_v].sum()
+    valor_pessoal = df[df['Grupo_Filtro'] == 'Despesa de pessoal'][col_v].sum()
+
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Cash Out Total", format_brl(abs(saidas_totais)))
-    tax_perc = abs(impostos_totais/saidas_totais)*100 if saidas_totais != 0 else 0
-    m2.metric("Carga Tributária", format_brl(abs(impostos_totais)), f"{tax_perc:.1f}% do total")
-    m3.metric("Custos Operacionais", format_brl(abs(operacional_puro)))
-    m4.metric("Aging (Lançamentos)", len(df))
+    # Card 1: Total Geral Filtrado
+    m1.metric("Cash Out Total", format_brl(abs(total_saidas)))
+    
+    # Card 2: Somente Tributário filtrado
+    tax_perc = abs(valor_tributario/total_saidas)*100 if total_saidas != 0 else 0
+    m2.metric("Total Tributário", format_brl(abs(valor_tributario)), f"{tax_perc:.1f}% do selecionado")
+    
+    # Card 3: Somente Operacional filtrado
+    m3.metric("Total Operacional", format_brl(abs(valor_operacional)))
+    
+    # Card 4: Total Administrativo + Pessoal (para fechar os 4 cards da imagem)
+    m4.metric("Adm. & Pessoal", format_brl(abs(valor_administrativo + valor_pessoal)))
 
     st.write("##")
 
-    tab_proj, tab_burn, tab_pareto, tab_tax, tab_raw = st.tabs([
-        "📊 Projeção Mensal", "🔥 Cash Burn Diário", "🎯 Pareto (80/20)", "🏛️ Fiscal vs Op", "📋 Dados Brutos"
+    # --- ABAS ---
+    tab_proj, tab_burn, tab_pareto, tab_raw = st.tabs([
+        "📊 Projeção Mensal", "🔥 Cash Burn Diário", "🎯 Pareto (80/20)", "📋 Dados Brutos"
     ])
 
     with tab_proj:
-        st.subheader("Análise Evolutiva: Histórico Mês a Mês")
-        # Aqui ele agrupa os dados já filtrados por categoria/grupo
+        st.subheader("Análise Evolutiva (Baseado nos Filtros)")
         proj_mensal = df[df[col_v] < 0].groupby('Periodo_Sort')[col_v].sum().abs().reset_index()
         proj_mensal['Mês/Ano'] = proj_mensal['Periodo_Sort'].astype(str)
         
@@ -135,54 +152,29 @@ try:
         with cp1:
             if not proj_mensal.empty:
                 st.bar_chart(proj_mensal.set_index('Mês/Ano')[col_v], color="#38bdf8")
-            else:
-                st.info("Ajuste os filtros para visualizar o gráfico.")
         with cp2:
-            st.markdown("### Totais por Período")
             st.dataframe(
                 proj_mensal[['Mês/Ano', col_v]].style.format({col_v: "R$ {:,.2f}"}),
                 hide_index=True, use_container_width=True
             )
 
     with tab_burn:
-        st.subheader("Evolução do Consumo de Caixa (Acumulado)")
+        st.subheader("Evolução do Consumo (Acumulado)")
         if not df.empty:
             burn_df = df.groupby('Data de pagamento')[col_v].sum().cumsum().reset_index()
             st.area_chart(burn_df.set_index('Data de pagamento'), color="#f43f5e")
-        else:
-            st.warning("Sem dados para os filtros selecionados.")
 
     with tab_pareto:
-        st.subheader("Análise de Pareto: Maiores Saídas")
+        st.subheader("Pareto por Categoria")
         saidas_somente = df[df[col_v] < 0]
         if not saidas_somente.empty:
             resumo_cat = saidas_somente.groupby('Categoria')[col_v].sum().abs().sort_values(ascending=False).reset_index()
-            resumo_cat['% Acumulado'] = (resumo_cat[col_v].cumsum() / resumo_cat[col_v].sum()) * 100
-            pareto_df = resumo_cat[resumo_cat['% Acumulado'] <= 90] 
-            c_p1, c_p2 = st.columns([1, 2])
-            with c_p1:
-                st.dataframe(pareto_df[['Categoria', col_v]].style.format({col_v: "R$ {:,.2f}"}), hide_index=True, use_container_width=True)
-            with c_p2:
-                st.bar_chart(pareto_df.set_index('Categoria')[col_v], color="#38bdf8")
-
-    with tab_tax:
-        st.subheader("Distribuição por Natureza")
-        c_t1, c_t2 = st.columns(2)
-        with c_t1:
-            dist_tipo = df.groupby('Tipo')[col_v].sum().abs()
-            if not dist_tipo.empty: st.bar_chart(dist_tipo, color="#a21caf")
-        with c_t2:
-            st.dataframe(
-                df[df['Tipo'] == 'Imposto/Retenção'][['Data de pagamento', 'Categoria', col_v]].style.format({col_v: "R$ {:,.2f}"}),
-                hide_index=True, use_container_width=True
-            )
+            st.bar_chart(resumo_cat.set_index('Categoria')[col_v], color="#38bdf8")
 
     with tab_raw:
         st.subheader("Explorador Geral")
-        busca = st.text_input("Filtrar por texto livre na categoria...", key="search_raw")
-        df_final = df[df['Categoria'].astype(str).str.contains(busca, case=False)]
         st.data_editor(
-            df_final,
+            df,
             column_config={
                 col_v: st.column_config.NumberColumn("Valor", format="R$ %.2f"),
                 "Data de pagamento": st.column_config.DateColumn("Vencimento", format="DD/MM/YYYY"),
@@ -191,4 +183,5 @@ try:
         )
 
 except Exception as e:
-    st.error(f"Erro ao carregar dashboard: {e}")
+    st.error(f"Erro: {e}")
+
