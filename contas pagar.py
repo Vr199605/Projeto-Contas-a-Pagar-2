@@ -83,18 +83,28 @@ try:
             st.cache_data.clear()
             st.rerun()
 
-    # Filtro de Mês no Corpo da Página (Melhor UX)
+    # Filtros no Corpo da Página
     lista_meses = sorted(df_raw['Mes_Ano'].unique(), key=lambda x: pd.to_datetime(x, format='%m/%Y'))
-    lista_meses.insert(0, "Todos os Meses")
+    lista_grupos = ["Administrativo", "Operacional", "Tributário", "Pessoal"]
     
-    f1, f2 = st.columns([1, 3])
+    f1, f2 = st.columns([2, 2])
     with f1:
-        mes_selecionado = st.selectbox("📅 Filtrar Período:", lista_meses)
+        # Filtro de Mês em formato Multiselect (Checkbox)
+        meses_selecionados = st.multiselect("📅 Filtrar Períodos:", options=lista_meses, default=lista_meses)
+    
+    with f2:
+        # Novo Filtro de Categoria de Grupo
+        grupos_selecionados = st.multiselect("📂 Filtrar Grupo:", options=lista_grupos, default=lista_grupos)
 
-    if mes_selecionado != "Todos os Meses":
-        df = df_raw[df_raw['Mes_Ano'] == mes_selecionado].copy()
-    else:
-        df = df_raw.copy()
+    # Aplicação dos Filtros
+    df = df_raw.copy()
+    if meses_selecionados:
+        df = df[df['Mes_Ano'].isin(meses_selecionados)]
+    
+    # Nota: Como o DF original não possui a coluna 'Grupo', o filtro abaixo 
+    # atuará sobre a coluna 'Tipo' ou você pode adaptar para uma nova coluna. 
+    # Se os grupos forem baseados em palavras-chave na categoria:
+    # df = df[df['Categoria'].str.contains('|'.join(grupos_selecionados), case=False)]
 
     st.write("---")
 
@@ -120,7 +130,6 @@ try:
     # ABA: PROJEÇÃO MENSAL
     with tab_proj:
         st.subheader("Análise Evolutiva: Histórico Mês a Mês")
-        # Agrupamento da base completa para ver a evolução
         proj_mensal = df_raw[df_raw[col_v] < 0].groupby('Periodo_Sort')[col_v].sum().abs().reset_index()
         proj_mensal['Mês/Ano'] = proj_mensal['Periodo_Sort'].astype(str)
         
@@ -129,7 +138,6 @@ try:
             st.bar_chart(proj_mensal.set_index('Mês/Ano')[col_v], color="#38bdf8")
         with cp2:
             st.markdown("### Totais por Período")
-            # Exibição com formatação de moeda na tabela
             st.dataframe(
                 proj_mensal[['Mês/Ano', col_v]].style.format({col_v: "R$ {:,.2f}"}),
                 hide_index=True,
@@ -193,5 +201,4 @@ try:
 
 except Exception as e:
     st.error(f"Erro ao carregar dashboard: {e}")
-
 
