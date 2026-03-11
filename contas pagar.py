@@ -10,7 +10,6 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700&display=swap');
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; background-color: #0E1117; }
     
-    /* Cards de Métricas */
     div[data-testid="metric-container"] {
         background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
         border: 1px solid #334155;
@@ -19,7 +18,6 @@ st.markdown("""
     }
     div[data-testid="stMetricValue"] { color: #38bdf8; font-weight: 700; }
     
-    /* Abas Customizadas */
     .stTabs [data-baseweb="tab-list"] { gap: 10px; }
     .stTabs [data-baseweb="tab"] {
         background-color: #1e293b;
@@ -29,7 +27,6 @@ st.markdown("""
     }
     .stTabs [aria-selected="true"] { background-color: #38bdf8 !important; color: #000 !important; }
     
-    /* Botão Sincronizar */
     .stButton>button {
         background: linear-gradient(90deg, #d946ef, #a21caf); border: none; color: white;
         border-radius: 12px; font-weight: bold; width: 100%;
@@ -37,11 +34,17 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# Função auxiliar para formatar moeda em texto (BR)
 def format_brl(val):
     return f"R$ {val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-# 2. Motor de Processamento de Dados
+# Dicionário de Mapeamento de Grupos e Categorias
+MAPA_GRUPOS = {
+    "Administrativo": ["ALUGUEL", "COMPRA DE ATIVO FIXO", "CONDOMÍNIO", "COWORKING", "CUSTO OPERACIONAL", "DESPESAS FINANCEIRAS", "ENERGIA ELÉTRICA", "ESTORNO", "EVENTOS FUNCIONÁRIOS", "Juros Pagos", "MANUTENÇÃO ESCRITÓRIO", "MATERIAIS DE TI", "MATERIAL DE COPA", "MATERIAL DE ESCRITÓRIO", "MATERIAL DE LIMPEZA", "Multas Pagas", "Não classificado", "OUTRAS DESPESAS", "PAGAMENTO DE EMPRÉSTIMO", "REPRESENTAÇÃO", "SEGUROS", "SERVIÇOS CONTÁBEIS", "SERVIÇOS CONTRATADOS", "SERVIÇOS DE E-MAIL", "SERVIÇOS DE ENTREGA", "SERVIÇOS DE PUBLICIDADE", "SERVIÇOS JURÍDICOS", "SERVIÇOS TI", "SISTEMAS", "TAXAS E CONTRIBUIÇÕES", "TELEFONIA/INTERNET", "TREINAMENTOS", "VAGAS GARAGEM - SÓCIOS"],
+    "Despesa de pessoal": ["13º SALÁRIO", "ADIANTAMENTO AO FUNCIONÁRIO", "ANTECIPAÇÃO DE RESULTADOS", "ASSISTÊNCIA MÉDICA", "ASSISTÊNCIA ODONTO", "BÔNUS CLT", "BÔNUS PERFORMANCE - G", "CONSULTORIA ESPECIALIZADA - G", "CONSULTORIA ESPECIALIZADA - TI", "DESPESA EVENTUAL DE PESSOAL", "DESPESAS VIAGEM", "ESTAGIÁRIO FOLHA", "EXAMES OCUPACIONAIS", "FÉRIAS", "FGTS", "GRATIFICAÇÕES CLT", "GRATIFICAÇÕES PJ - G", "INSS", "IRRF", "LOCOMOÇÃO", "MATERIAL DE COPA", "Multas Pagas", "PRO LABORE", "REPRESENTAÇÃO", "RESCISÃO", "SALÁRIOS CLT", "SEGURO DE VIDA", "SERVIÇOS CONTRATADOS", "VA/VR", "VT"],
+    "Operacional": ["BÔNUS - TERCEIROS", "COMISSÕES SEGUROS", "CUSTO OPERACIONAL", "Descontos Recebidos", "EVENTOS CLIENTES", "Multas Pagas", "REBATE COMISSÕES", "REPRESENTAÇÃO"],
+    "Tributário": ["COFINS", "COFINS Retido sobre Pagamentos", "CSLL", "CSLL Retido sobre Pagamentos", "DESPESAS FINANCEIRAS", "ESTORNO", "INSS Retido sobre Pagamentos", "IPTU", "IRPJ", "IRPJ Retido sobre Pagamentos", "ISS", "ISS Retido sobre Pagamentos", "Juros Pagos", "Multas Pagas", "Pagamento de ISS Retido", "PARCELAMENTO RECEITA FEDERAL", "PERT CSLL", "PERT IRPJ", "PERT IRRF", "PERT SN", "PIS", "PIS Retido sobre Pagamentos", "SERVIÇOS DE PUBLICIDADE"]
+}
+
 @st.cache_data(ttl=600)
 def load_and_process():
     url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT7KV7hi8lJHEleaPoPyAKWo7ChUTlLuorbLX9v4aZGXPKI6aeudpF06eUc60hmIPX8Pkz5BrZOhc1G/pub?output=csv"
@@ -58,8 +61,6 @@ def load_and_process():
     df[col_v] = df[col_v].apply(clean_val)
     df['Data de pagamento'] = pd.to_datetime(df['Data de pagamento'], dayfirst=True, errors='coerce')
     df = df.dropna(subset=['Data de pagamento']).sort_values('Data de pagamento')
-
-    # Criar colunas de período
     df['Mes_Ano'] = df['Data de pagamento'].dt.strftime('%m/%Y')
     df['Periodo_Sort'] = df['Data de pagamento'].dt.to_period('M')
 
@@ -67,14 +68,12 @@ def load_and_process():
     df['Tipo'] = df['Categoria'].apply(
         lambda x: 'Imposto/Retenção' if any(k in str(x).upper() for k in keywords_imposto) else 'Operacional'
     )
-    
     return df
 
 try:
     df_raw = load_and_process()
     col_v = 'Valor categoria/centro de custo'
 
-    # Header Superior
     c1, c2 = st.columns([4, 1])
     with c1:
         st.title("💎 CASH FLOW PROJECT - ACCOUNTS PAYABLE")
@@ -83,32 +82,32 @@ try:
             st.cache_data.clear()
             st.rerun()
 
-    # Filtros no Corpo da Página
+    # --- SEÇÃO DE FILTROS ---
     lista_meses = sorted(df_raw['Mes_Ano'].unique(), key=lambda x: pd.to_datetime(x, format='%m/%Y'))
-    lista_grupos = ["Administrativo", "Operacional", "Tributário", "Pessoal"]
     
-    f1, f2 = st.columns([2, 2])
+    f1, f2, f3 = st.columns([1, 1, 2])
     with f1:
-        # Filtro de Mês em formato Multiselect (Checkbox)
-        meses_selecionados = st.multiselect("📅 Filtrar Períodos:", options=lista_meses, default=lista_meses)
-    
+        meses_sel = st.multiselect("📅 Períodos:", options=lista_meses, default=lista_meses)
     with f2:
-        # Novo Filtro de Categoria de Grupo
-        grupos_selecionados = st.multiselect("📂 Filtrar Grupo:", options=lista_grupos, default=lista_grupos)
+        grupos_sel = st.multiselect("📂 Grupos:", options=list(MAPA_GRUPOS.keys()), default=list(MAPA_GRUPOS.keys()))
+    with f3:
+        # Categorias filtradas de acordo com os grupos escolhidos
+        cats_possiveis = []
+        for g in grupos_sel:
+            cats_possiveis.extend(MAPA_GRUPOS[g])
+        cats_possiveis = sorted(list(set(cats_possiveis))) # Remove duplicatas entre grupos
+        cats_sel = st.multiselect("🏷️ Categorias:", options=cats_possiveis, default=cats_possiveis)
 
-    # Aplicação dos Filtros
+    # Aplicação Cascata dos Filtros
     df = df_raw.copy()
-    if meses_selecionados:
-        df = df[df['Mes_Ano'].isin(meses_selecionados)]
-    
-    # Nota: Como o DF original não possui a coluna 'Grupo', o filtro abaixo 
-    # atuará sobre a coluna 'Tipo' ou você pode adaptar para uma nova coluna. 
-    # Se os grupos forem baseados em palavras-chave na categoria:
-    # df = df[df['Categoria'].str.contains('|'.join(grupos_selecionados), case=False)]
+    if meses_sel:
+        df = df[df['Mes_Ano'].isin(meses_sel)]
+    if cats_sel:
+        df = df[df['Categoria'].isin(cats_sel)]
 
     st.write("---")
 
-    # 3. Métricas de Alto Impacto
+    # 3. Métricas Dinâmicas
     saidas_totais = df[df[col_v] < 0][col_v].sum()
     impostos_totais = df[df['Tipo'] == 'Imposto/Retenção'][col_v].sum()
     operacional_puro = df[df['Tipo'] == 'Operacional'][col_v].sum()
@@ -122,38 +121,37 @@ try:
 
     st.write("##")
 
-    # 4. Sistema de Abas Estratégicas
     tab_proj, tab_burn, tab_pareto, tab_tax, tab_raw = st.tabs([
         "📊 Projeção Mensal", "🔥 Cash Burn Diário", "🎯 Pareto (80/20)", "🏛️ Fiscal vs Op", "📋 Dados Brutos"
     ])
 
-    # ABA: PROJEÇÃO MENSAL
     with tab_proj:
         st.subheader("Análise Evolutiva: Histórico Mês a Mês")
-        proj_mensal = df_raw[df_raw[col_v] < 0].groupby('Periodo_Sort')[col_v].sum().abs().reset_index()
+        # Aqui ele agrupa os dados já filtrados por categoria/grupo
+        proj_mensal = df[df[col_v] < 0].groupby('Periodo_Sort')[col_v].sum().abs().reset_index()
         proj_mensal['Mês/Ano'] = proj_mensal['Periodo_Sort'].astype(str)
         
         cp1, cp2 = st.columns([2, 1])
         with cp1:
-            st.bar_chart(proj_mensal.set_index('Mês/Ano')[col_v], color="#38bdf8")
+            if not proj_mensal.empty:
+                st.bar_chart(proj_mensal.set_index('Mês/Ano')[col_v], color="#38bdf8")
+            else:
+                st.info("Ajuste os filtros para visualizar o gráfico.")
         with cp2:
             st.markdown("### Totais por Período")
             st.dataframe(
                 proj_mensal[['Mês/Ano', col_v]].style.format({col_v: "R$ {:,.2f}"}),
-                hide_index=True,
-                use_container_width=True
+                hide_index=True, use_container_width=True
             )
 
-    # ABA: CASH BURN
     with tab_burn:
         st.subheader("Evolução do Consumo de Caixa (Acumulado)")
         if not df.empty:
             burn_df = df.groupby('Data de pagamento')[col_v].sum().cumsum().reset_index()
             st.area_chart(burn_df.set_index('Data de pagamento'), color="#f43f5e")
         else:
-            st.warning("Sem dados para o período.")
+            st.warning("Sem dados para os filtros selecionados.")
 
-    # ABA: PARETO
     with tab_pareto:
         st.subheader("Análise de Pareto: Maiores Saídas")
         saidas_somente = df[df[col_v] < 0]
@@ -161,35 +159,28 @@ try:
             resumo_cat = saidas_somente.groupby('Categoria')[col_v].sum().abs().sort_values(ascending=False).reset_index()
             resumo_cat['% Acumulado'] = (resumo_cat[col_v].cumsum() / resumo_cat[col_v].sum()) * 100
             pareto_df = resumo_cat[resumo_cat['% Acumulado'] <= 90] 
-            
             c_p1, c_p2 = st.columns([1, 2])
             with c_p1:
-                st.dataframe(
-                    pareto_df[['Categoria', col_v]].style.format({col_v: "R$ {:,.2f}"}),
-                    hide_index=True, use_container_width=True
-                )
+                st.dataframe(pareto_df[['Categoria', col_v]].style.format({col_v: "R$ {:,.2f}"}), hide_index=True, use_container_width=True)
             with c_p2:
                 st.bar_chart(pareto_df.set_index('Categoria')[col_v], color="#38bdf8")
 
-    # ABA: FISCAL VS OPERAÇÃO
     with tab_tax:
         st.subheader("Distribuição por Natureza")
         c_t1, c_t2 = st.columns(2)
         with c_t1:
             dist_tipo = df.groupby('Tipo')[col_v].sum().abs()
-            st.bar_chart(dist_tipo, color="#a21caf")
+            if not dist_tipo.empty: st.bar_chart(dist_tipo, color="#a21caf")
         with c_t2:
             st.dataframe(
                 df[df['Tipo'] == 'Imposto/Retenção'][['Data de pagamento', 'Categoria', col_v]].style.format({col_v: "R$ {:,.2f}"}),
                 hide_index=True, use_container_width=True
             )
 
-    # ABA: DADOS BRUTOS
     with tab_raw:
         st.subheader("Explorador Geral")
-        busca = st.text_input("Filtrar por conta ou categoria...", key="search_raw")
+        busca = st.text_input("Filtrar por texto livre na categoria...", key="search_raw")
         df_final = df[df['Categoria'].astype(str).str.contains(busca, case=False)]
-        
         st.data_editor(
             df_final,
             column_config={
@@ -201,4 +192,3 @@ try:
 
 except Exception as e:
     st.error(f"Erro ao carregar dashboard: {e}")
-
