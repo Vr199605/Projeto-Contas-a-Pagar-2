@@ -1,8 +1,9 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import plotly.express as px
 
-# 1. Configuração de Página
+# 1. Configuração de Página e Estilo
 st.set_page_config(page_title="CASH FLOW PROJECT", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
@@ -17,6 +18,9 @@ st.markdown("""
         border-radius: 20px;
     }
     div[data-testid="stMetricValue"] { color: #38bdf8; font-weight: 700; }
+    
+    /* Ajuste para alinhar os gráficos de pizza */
+    .main .block-container { padding-top: 2rem; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -60,6 +64,7 @@ try:
     lista_meses = sorted(df_raw['Mes_Ano'].unique(), key=lambda x: pd.to_datetime(x, format='%m/%Y'))
     todas_cats = sorted(list(set([c for sub in MAPA_GRUPOS.values() for c in sub])))
 
+    # --- SIDEBAR ---
     with st.sidebar:
         st.title("⚙️ Filtros")
         if st.button("🔄 Sincronizar Dados", type="primary"):
@@ -89,7 +94,7 @@ try:
 
     st.title("💎 CASH FLOW PROJECT - ACCOUNTS PAYABLE")
     
-    # --- MÉTRICAS (CORRIGIDAS CONFORME IMAGEM) ---
+    # --- MÉTRICAS ---
     saidas_only = df[df[col_v] < 0].copy()
     total_geral = saidas_only[col_v].sum()
     valor_tributario = saidas_only[saidas_only['Grupo_Filtro'] == 'Tributário'][col_v].sum()
@@ -101,7 +106,7 @@ try:
         st.metric("Cash Out Total", format_brl(abs(total_geral)))
     with m2:
         perc_trib = (abs(valor_tributario) / abs(total_geral) * 100) if total_geral != 0 else 0
-        st.metric("Carga Tributária", format_brl(abs(valor_tributario)), f"{perc_trib:.1f}% do total")
+        st.metric("Carga Tributária", format_brl(abs(valor_tributario)), f"↑ {perc_trib:.1f}% do total")
     with m3:
         st.metric("Custos Operacionais", format_brl(abs(valor_operacional)))
     with m4:
@@ -114,54 +119,60 @@ try:
 
     with tab_proj:
         st.subheader("📈 Evolução Mensal do Desembolso")
-        # Criando a coluna Mês/Ano explicitamente para evitar o Erro: 'Mês/Ano'
         saidas_only['Mês/Ano'] = saidas_only['Data de pagamento'].dt.strftime('%m/%Y')
-        
         proj_mensal = saidas_only.groupby('Periodo_Sort')[col_v].sum().abs().reset_index()
         proj_mensal['Mês/Ano_Label'] = proj_mensal['Periodo_Sort'].astype(str)
         st.bar_chart(proj_mensal.set_index('Mês/Ano_Label')[col_v], color="#38bdf8")
         
-        c_proj1, c_proj2 = st.columns(2)
-        with c_proj1:
-            st.subheader("📂 Projeção por Grupo")
-            # Agrupamento seguro
-            proj_grupo = saidas_only.groupby(['Mês/Ano', 'Grupo_Filtro'])[col_v].sum().abs().unstack().fillna(0)
-            if not proj_grupo.empty:
-                st.line_chart(proj_grupo)
-            
-        with c_proj2:
-            st.subheader("🏷️ Projeção por Categoria (Top 5)")
-            top_5_cats = saidas_only.groupby('Categoria')[col_v].sum().abs().nlargest(5).index
-            proj_cat = saidas_only[saidas_only['Categoria'].isin(top_5_cats)].groupby(['Mês/Ano', 'Categoria'])[col_v].sum().abs().unstack().fillna(0)
-            if not proj_cat.empty:
-                st.line_chart(proj_cat)
+        cp1, cp2 = st.columns(2)
+        with cp1:
+            st.markdown("### 📂 Projeção por Grupo")
+            proj_g = saidas_only.groupby(['Mês/Ano', 'Grupo_Filtro'])[col_v].sum().abs().unstack().fillna(0)
+            if not proj_g.empty: st.line_chart(proj_g)
+        with cp2:
+            st.markdown("### 🏷️ Projeção por Categoria (Top 5)")
+            top5 = saidas_only.groupby('Categoria')[col_v].sum().abs().nlargest(5).index
+            proj_c = saidas_only[saidas_only['Categoria'].isin(top5)].groupby(['Mês/Ano', 'Categoria'])[col_v].sum().abs().unstack().fillna(0)
+            if not proj_c.empty: st.line_chart(proj_c)
 
     with tab_burn:
         st.subheader("🔥 Queima de Caixa Diária")
         if not saidas_only.empty:
-            burn_diario = saidas_only.groupby('Data de pagamento')[col_v].sum().abs().reset_index()
-            burn_diario['Acumulado'] = burn_diario[col_v].cumsum()
-            st.area_chart(burn_diario.set_index('Data de pagamento')['Acumulado'], color="#f43f5e")
+            burn = saidas_only.groupby('Data de pagamento')[col_v].sum().abs().reset_index()
+            burn['Acumulado'] = burn[col_v].cumsum()
+            st.area_chart(burn.set_index('Data de pagamento')['Acumulado'], color="#f43f5e")
 
     with tab_pareto:
-        st.subheader("🎯 Ranking de Maiores Gastos")
+        st.subheader("🎯 Análise de Distribuição (Pizza & Ranking)")
         if not saidas_only.empty:
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown("### 📂 Maiores Gastos por Grupo")
-                pareto_grupo = saidas_only.groupby('Grupo_Filtro')[col_v].sum().abs().reset_index()
-                pareto_grupo.columns = ['Grupo', 'Total Gasto']
-                pareto_grupo = pareto_grupo.sort_values('Total Gasto', ascending=False)
-                st.dataframe(pareto_grupo.style.format({'Total Gasto': "R$ {:,.2f}"}), use_container_width=True, hide_index=True)
-                st.bar_chart(pareto_grupo.set_index('Grupo')['Total Gasto'], color="#f43f5e")
+            col_p1, col_p2 = st.columns(2)
+            
+            with col_p1:
+                st.markdown("### 📂 Gastos por Grupo")
+                df_g = saidas_only.groupby('Grupo_Filtro')[col_v].sum().abs().reset_index()
+                df_g.columns = ['Grupo', 'Total Gasto']
+                
+                fig1 = px.pie(df_g, values='Total Gasto', names='Grupo', hole=0.4, 
+                             color_discrete_sequence=px.colors.sequential.RdBu)
+                fig1.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=350)
+                st.plotly_chart(fig1, use_container_width=True)
+                
+                st.dataframe(df_g.sort_values('Total Gasto', ascending=False).style.format({'Total Gasto': "R$ {:,.2f}"}), use_container_width=True, hide_index=True)
+                st.bar_chart(df_g.set_index('Grupo')['Total Gasto'], color="#f43f5e")
 
-            with c2:
-                st.markdown("### 🏷️ Maiores Gastos por Categoria")
-                pareto_cat = saidas_only.groupby('Categoria')[col_v].sum().abs().reset_index()
-                pareto_cat.columns = ['Categoria', 'Total Gasto']
-                pareto_cat = pareto_cat.sort_values('Total Gasto', ascending=False)
-                st.dataframe(pareto_cat.style.format({'Total Gasto': "R$ {:,.2f}"}), use_container_width=True, hide_index=True)
-                st.bar_chart(pareto_cat.head(10).set_index('Categoria')['Total Gasto'], color="#38bdf8")
+            with col_p2:
+                st.markdown("### 🏷️ Top 10 Categorias")
+                df_c = saidas_only.groupby('Categoria')[col_v].sum().abs().reset_index()
+                df_c.columns = ['Categoria', 'Total Gasto']
+                df_c_top = df_c.sort_values('Total Gasto', ascending=False).head(10)
+                
+                fig2 = px.pie(df_c_top, values='Total Gasto', names='Categoria', hole=0.4,
+                             color_discrete_sequence=px.colors.sequential.Blues_r)
+                fig2.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=350)
+                st.plotly_chart(fig2, use_container_width=True)
+                
+                st.dataframe(df_c.sort_values('Total Gasto', ascending=False).style.format({'Total Gasto': "R$ {:,.2f}"}), use_container_width=True, hide_index=True)
+                st.bar_chart(df_c_top.set_index('Categoria')['Total Gasto'], color="#38bdf8")
 
     with tab_raw:
         st.subheader("📋 Lista de Lançamentos")
@@ -169,14 +180,14 @@ try:
             df, 
             column_config={
                 col_v: st.column_config.NumberColumn("Valor", format="R$ %.2f"),
-                "Data de pagamento": st.column_config.DateColumn("Data de Pagamento", format="DD/MM/YYYY")
+                "Data de pagamento": st.column_config.DateColumn("Data", format="DD/MM/YYYY")
             }, 
-            use_container_width=True, 
-            hide_index=True
+            use_container_width=True, hide_index=True
         )
 
 except Exception as e:
-    st.error(f"Erro inesperado: {e}")
+    st.error(f"Erro Crítico: {e}")
+
 
 
 
