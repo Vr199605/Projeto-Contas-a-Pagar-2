@@ -92,7 +92,11 @@ def load_and_process():
 try:
     df_raw, df_rec_raw = load_and_process()
     col_v = 'Valor categoria/centro de custo'
-    lista_meses = sorted(df_raw['Mes_Ano'].unique(), key=lambda x: pd.to_datetime(x, format='%m/%Y'))
+    
+    # Consolidação de meses de AMBAS as planilhas para o filtro
+    meses_s = df_raw['Mes_Ano'].unique()
+    meses_r = df_rec_raw['Mes_Ano'].unique()
+    lista_meses = sorted(list(set(meses_s) | set(meses_r)), key=lambda x: pd.to_datetime(x, format='%m/%Y'))
 
     with st.sidebar:
         st.markdown("<h2 style='color: #00D1FF;'>💎 DASHBOARD</h2>", unsafe_allow_html=True)
@@ -100,7 +104,7 @@ try:
             st.cache_data.clear()
             st.rerun()
         st.write("---")
-        # Definindo o mês atual por padrão se disponível, senão o último da lista
+        
         default_mes = [lista_meses[-1]] if lista_meses else []
         meses_sel = st.multiselect("📅 Períodos:", options=lista_meses, default=default_mes)
         grupos_sel = st.multiselect("📂 Grupos:", options=list(MAPA_GRUPOS.keys()), default=list(MAPA_GRUPOS.keys()))
@@ -145,11 +149,6 @@ try:
         st.subheader("Apresentação do Dashboard Executivo")
         st.markdown(f"""
         Este dashboard foi desenvolvido para fornecer à **Diretoria e Sócios** uma visão clara e objetiva da saúde financeira da operação.
-        
-        **Objetivos desta ferramenta:**
-        * **Transparência Total:** Monitoramento em tempo real do destino do capital da empresa.
-        * **Análise de Eficiência:** Identificação rápida de custos que excedem o planejado através do ranking de categorias.
-        * **Gestão de Queima (Cash Burn):** Acompanhamento diário acumulado.
         """)
 
     with tab2:
@@ -158,7 +157,6 @@ try:
             burn = saidas_df.groupby('Data de pagamento')[col_v].sum().abs().cumsum().reset_index()
             burn.columns = ['Data', 'Gasto Acumulado']
             st.line_chart(burn.set_index('Data')['Gasto Acumulado'], color="#FF4B4B")
-            
             st.write("#### Detalhamento de Saída Diária")
             diario = saidas_df.groupby('Data de pagamento')[col_v].sum().abs().reset_index()
             diario.columns = ['Data', 'Valor do Dia']
@@ -173,7 +171,6 @@ try:
             g_pareto = saidas_df.groupby('Grupo_Filtro')[col_v].sum().abs().sort_values(ascending=False).reset_index()
             st.dataframe(g_pareto.style.format({col_v: "R$ {:,.2f}"}), use_container_width=True, hide_index=True)
             st.bar_chart(g_pareto.set_index('Grupo_Filtro')[col_v], color="#00D1FF")
-
         with c2:
             st.subheader("Top 10 Categorias")
             c_pareto = saidas_df.groupby('Categoria')[col_v].sum().abs().sort_values(ascending=False).head(10).reset_index()
@@ -191,18 +188,13 @@ try:
     with tab6:
         label_periodo = ", ".join(meses_sel) if meses_sel else "Nenhum período selecionado"
         st.subheader(f"Análise Financeira: {label_periodo}")
-        
-        # Cálculos baseados no filtro lateral
         curr_s = abs(df[df[col_v] < 0][col_v].sum())
         curr_e = df_rec[col_v].sum()
         resultado = curr_e - curr_s
-        
         col_res1, col_res2, col_res3 = st.columns(3)
         col_res1.metric("Entrou no Período", format_brl(curr_e))
         col_res2.metric("Saiu no Período", format_brl(curr_s))
         col_res3.metric("Saldo Líquido", format_brl(resultado), delta=resultado)
-        
-        st.write("---")
         df_chart = pd.DataFrame({'Tipo': ['Entradas', 'Saídas'], 'Valores': [curr_e, curr_s]}).set_index('Tipo')
         st.bar_chart(df_chart, color="#00D1FF")
 
@@ -212,27 +204,22 @@ try:
         total_s = abs(df[df[col_v] < 0][col_v].sum())
         lucro_abs = total_e - total_s
         margem = (lucro_abs / total_e * 100) if total_e > 0 else 0
-        
         cl1, cl2 = st.columns(2)
         cl1.metric("LUCRO LÍQUIDO (CAIXA)", format_brl(lucro_abs))
         cl2.metric("MARGEM DE LUCRO", f"{margem:.1f}%")
-        
         st.write("#### Eficiência por Grupo (% Consumo sobre a Receita)")
         if total_e > 0:
             grupo_impacto = (df[df[col_v] < 0].groupby('Grupo_Filtro')[col_v].sum().abs() / total_e * 100).round(1).reset_index()
             grupo_impacto.columns = ['Grupo', '% Receita']
             st.bar_chart(grupo_impacto.set_index('Grupo'), color="#00D1FF")
-            
             st.write("📊 **Detalhamento de Impacto no Faturamento:**")
-            st.dataframe(
-                grupo_impacto.assign(Porcentagem=grupo_impacto['% Receita'].apply(lambda x: f"{x:.1f}%"))[['Grupo', 'Porcentagem']],
-                use_container_width=True, hide_index=True
-            )
+            st.dataframe(grupo_impacto.assign(Porcentagem=grupo_impacto['% Receita'].apply(lambda x: f"{x:.1f}%"))[['Grupo', 'Porcentagem']], use_container_width=True, hide_index=True)
         else:
             st.info("Aguardando dados de receita para calcular impacto por grupo.")
 
 except Exception as e:
     st.error(f"Erro ao carregar layout: {e}")
+
 
 
 
