@@ -117,7 +117,7 @@ try:
     if meses_sel: df_rec = df_rec[df_rec['Mes_Ano'].isin(meses_sel)]
 
     # --- HEADER PRINCIPAL ---
-    st.title("💸 Cash Flow | Accounts Payable")
+    st.title("💸 Cash Flow |Expenses and Receipts")
     st.markdown(f"<p style='color: #94A3B8;'>Análise detalhada de saídas e projeções financeiras</p>", unsafe_allow_html=True)
     
     saidas_df = df[df[col_v] < 0]
@@ -231,6 +231,7 @@ try:
 
 except Exception as e:
     st.error(f"Erro ao carregar layout: {e}")
+
 
 
 
