@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 
 # 1. Configuração de Página e Layout Dark Luxo
-st.set_page_config(page_title="CASH FLOW | Expenses and Receipts", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="CASH FLOW | AP", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
@@ -100,7 +100,9 @@ try:
             st.cache_data.clear()
             st.rerun()
         st.write("---")
-        meses_sel = st.multiselect("📅 Períodos:", options=lista_meses, default=lista_meses)
+        # Definindo o mês atual por padrão se disponível, senão o último da lista
+        default_mes = [lista_meses[-1]] if lista_meses else []
+        meses_sel = st.multiselect("📅 Períodos:", options=lista_meses, default=default_mes)
         grupos_sel = st.multiselect("📂 Grupos:", options=list(MAPA_GRUPOS.keys()), default=list(MAPA_GRUPOS.keys()))
         
         cats_dinamicas = [cat for g in grupos_sel for cat in MAPA_GRUPOS[g]]
@@ -117,7 +119,7 @@ try:
     if meses_sel: df_rec = df_rec[df_rec['Mes_Ano'].isin(meses_sel)]
 
     # --- HEADER PRINCIPAL ---
-    st.title("💸 Cash Flow |Expenses and Receipts")
+    st.title("💸 Cash Flow | Expenses and Receipts")
     st.markdown(f"<p style='color: #94A3B8;'>Análise detalhada de saídas e projeções financeiras</p>", unsafe_allow_html=True)
     
     saidas_df = df[df[col_v] < 0]
@@ -136,21 +138,18 @@ try:
 
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "📊 EVOLUÇÃO", "🔥 CASH BURN", "🎯 PARETO", "📋 DADOS", 
-        "💰 RECEBIDOS", "📈 ANÁLISE JAN/26", "💎 LUCRATIVIDADE"
+        "💰 RECEBIDOS", "📈 ANÁLISE MENSAL", "💎 LUCRATIVIDADE"
     ])
 
     with tab1:
         st.subheader("Apresentação do Dashboard Executivo")
         st.markdown(f"""
-        Este dashboard foi desenvolvido para fornecer à **Diretoria e Sócios** uma visão clara e objetiva da saúde financeira da operação, focando estritamente no fluxo de saídas (Contas a Pagar). 
+        Este dashboard foi desenvolvido para fornecer à **Diretoria e Sócios** uma visão clara e objetiva da saúde financeira da operação.
         
         **Objetivos desta ferramenta:**
         * **Transparência Total:** Monitoramento em tempo real do destino do capital da empresa.
         * **Análise de Eficiência:** Identificação rápida de custos que excedem o planejado através do ranking de categorias.
-        * **Gestão de Queima (Cash Burn):** Acompanhamento diário acumulado para garantir que o fluxo de desembolso esteja alinhado com as metas de liquidez.
-        * **Tomada de Decisão Estratégica:** Filtros dinâmicos que permitem isolar grupos como Pessoal, Operacional e Tributário para ajustes precisos na estrutura de custos.
-        
-        *Utilize os filtros laterais para navegar entre períodos e categorias específicas.*
+        * **Gestão de Queima (Cash Burn):** Acompanhamento diário acumulado.
         """)
 
     with tab2:
@@ -190,18 +189,22 @@ try:
         st.dataframe(df_rec, use_container_width=True, hide_index=True)
 
     with tab6:
-        st.subheader("Análise Mensal: Janeiro 2026")
-        jan_s = abs(df_raw[df_raw['Mes_Ano'] == '01/2026'][col_v].sum())
-        jan_e = df_rec_raw[df_rec_raw['Mes_Ano'] == '01/2026'][col_v].sum()
-        resultado = jan_e - jan_s
+        label_periodo = ", ".join(meses_sel) if meses_sel else "Nenhum período selecionado"
+        st.subheader(f"Análise Financeira: {label_periodo}")
+        
+        # Cálculos baseados no filtro lateral
+        curr_s = abs(df[df[col_v] < 0][col_v].sum())
+        curr_e = df_rec[col_v].sum()
+        resultado = curr_e - curr_s
         
         col_res1, col_res2, col_res3 = st.columns(3)
-        col_res1.metric("Entrou (Jan/26)", format_brl(jan_e))
-        col_res2.metric("Saiu (Jan/26)", format_brl(jan_s))
-        col_res3.metric("Saldo/Déficit", format_brl(resultado), delta=resultado)
+        col_res1.metric("Entrou no Período", format_brl(curr_e))
+        col_res2.metric("Saiu no Período", format_brl(curr_s))
+        col_res3.metric("Saldo Líquido", format_brl(resultado), delta=resultado)
         
-        df_jan_chart = pd.DataFrame({'Tipo': ['Entradas', 'Saídas'], 'Valores': [jan_e, jan_s]}).set_index('Tipo')
-        st.bar_chart(df_jan_chart, color="#00D1FF")
+        st.write("---")
+        df_chart = pd.DataFrame({'Tipo': ['Entradas', 'Saídas'], 'Valores': [curr_e, curr_s]}).set_index('Tipo')
+        st.bar_chart(df_chart, color="#00D1FF")
 
     with tab7:
         st.subheader("Margem de Contribuição e Lucratividade")
@@ -218,7 +221,6 @@ try:
         if total_e > 0:
             grupo_impacto = (df[df[col_v] < 0].groupby('Grupo_Filtro')[col_v].sum().abs() / total_e * 100).round(1).reset_index()
             grupo_impacto.columns = ['Grupo', '% Receita']
-            
             st.bar_chart(grupo_impacto.set_index('Grupo'), color="#00D1FF")
             
             st.write("📊 **Detalhamento de Impacto no Faturamento:**")
