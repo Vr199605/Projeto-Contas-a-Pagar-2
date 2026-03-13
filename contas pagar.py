@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 
 # 1. Configuração de Página e Layout Dark Luxo
-st.set_page_config(page_title="CASH FLOW | AP", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="CASH FLOW | Expenses and Receipts", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
@@ -231,5 +231,6 @@ try:
 
 except Exception as e:
     st.error(f"Erro ao carregar layout: {e}")
+
 
 
